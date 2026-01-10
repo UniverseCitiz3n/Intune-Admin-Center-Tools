@@ -2187,6 +2187,135 @@ document.addEventListener("DOMContentLoaded", () => {
         logMessage(`checkGroupAssignments: Error fetching compliance policies - ${error.message}`);
       }
 
+      // Fetch app assignments
+      logMessage("checkGroupAssignments: Fetching app assignments...");
+      try {
+        const appsData = await fetchJSON("https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?$filter=isAssigned eq true&$select=id,displayName,publisher", {
+          method: "GET",
+          headers: { "Authorization": token, "Content-Type": "application/json" }
+        });
+
+        const apps = appsData.value || [];
+        logMessage(`checkGroupAssignments: Found ${apps.length} apps with assignments`);
+
+        // Fetch assignments for apps
+        for (const app of apps) {
+          try {
+            const assignmentsData = await fetchJSON(`https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/${app.id}/assignments`, {
+              method: "GET",
+              headers: { "Authorization": token, "Content-Type": "application/json" }
+            });
+
+            const assignments = assignmentsData.value || [];
+            assignments.forEach(assignment => {
+              if (!assignment.target) return;
+
+              const targetType = (assignment.target['@odata.type'] || "").toLowerCase().trim();
+              
+              if (targetType.includes("groupassignmenttarget")) {
+                const assignedGroupId = assignment.target.groupId;
+                const matchedGroup = selectedGroups.find(g => g.id === assignedGroupId);
+                
+                if (matchedGroup) {
+                  // Determine intent from assignment intent property
+                  let intent = "Included";
+                  if (assignment.intent) {
+                    if (assignment.intent === "available") {
+                      intent = "Available";
+                    } else if (assignment.intent === "required") {
+                      intent = "Required";
+                    } else if (assignment.intent === "uninstall") {
+                      intent = "Uninstall";
+                    } else if (assignment.intent === "availableWithoutEnrollment") {
+                      intent = "Available Without Enrollment";
+                    }
+                  }
+                  
+                  if (targetType.includes("exclusion")) {
+                    intent = "Excluded";
+                  }
+
+                  let assignmentTargetType = "Device";
+                  if (targetType.includes("user")) {
+                    assignmentTargetType = "User";
+                  }
+
+                  allAssignments.push({
+                    policyName: app.displayName,
+                    policyType: "App",
+                    intent: intent,
+                    targetType: assignmentTargetType,
+                    groupName: matchedGroup.name
+                  });
+                }
+              }
+            });
+          } catch (error) {
+            logMessage(`checkGroupAssignments: Error fetching app ${app.displayName} assignments - ${error.message}`);
+          }
+        }
+      } catch (error) {
+        logMessage(`checkGroupAssignments: Error fetching apps - ${error.message}`);
+      }
+
+      // Fetch PowerShell script assignments
+      logMessage("checkGroupAssignments: Fetching PowerShell script assignments...");
+      try {
+        const scriptsData = await fetchJSON("https://graph.microsoft.com/beta/deviceManagement/deviceManagementScripts?$select=id,displayName,description", {
+          method: "GET",
+          headers: { "Authorization": token, "Content-Type": "application/json" }
+        });
+
+        const scripts = scriptsData.value || [];
+        logMessage(`checkGroupAssignments: Found ${scripts.length} PowerShell scripts`);
+
+        // Fetch assignments for scripts
+        for (const script of scripts) {
+          try {
+            const assignmentsData = await fetchJSON(`https://graph.microsoft.com/beta/deviceManagement/deviceManagementScripts/${script.id}/assignments`, {
+              method: "GET",
+              headers: { "Authorization": token, "Content-Type": "application/json" }
+            });
+
+            const assignments = assignmentsData.value || [];
+            assignments.forEach(assignment => {
+              if (!assignment.target) return;
+
+              const targetType = (assignment.target['@odata.type'] || "").toLowerCase().trim();
+              
+              if (targetType.includes("groupassignmenttarget")) {
+                const assignedGroupId = assignment.target.groupId;
+                const matchedGroup = selectedGroups.find(g => g.id === assignedGroupId);
+                
+                if (matchedGroup) {
+                  let intent = "Included";
+                  if (targetType.includes("exclusion")) {
+                    intent = "Excluded";
+                  }
+
+                  let assignmentTargetType = "Device";
+                  if (targetType.includes("user")) {
+                    assignmentTargetType = "User";
+                  }
+
+                  allAssignments.push({
+                    policyName: script.displayName,
+                    policyType: "PowerShell Script",
+                    intent: intent,
+                    targetType: assignmentTargetType,
+                    groupName: matchedGroup.name
+                  });
+                }
+              }
+            });
+          } catch (error) {
+            logMessage(`checkGroupAssignments: Error fetching script ${script.displayName} assignments - ${error.message}`);
+          }
+        }
+      } catch (error) {
+        logMessage(`checkGroupAssignments: Error fetching PowerShell scripts - ${error.message}`);
+      }
+
       // Store and display results
       chrome.storage.local.set({ lastGroupAssignments: allAssignments });
       updateGroupAssignmentsTable(allAssignments);
