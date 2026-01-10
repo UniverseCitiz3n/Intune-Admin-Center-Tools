@@ -136,6 +136,16 @@ document.addEventListener("DOMContentLoaded", () => {
           updateGroupMembersTable(filteredResults, false);
         }
       });
+    } else if (state.currentDisplayType === 'groupAssignments') {
+      chrome.storage.local.get(['lastGroupAssignments'], (data) => {
+        if (data.lastGroupAssignments) {
+          const filteredResults = [...data.lastGroupAssignments].filter(item =>
+            item.policyName.toLowerCase().includes(filterText)
+          );
+
+          updateGroupAssignmentsTable(filteredResults, false);
+        }
+      });
     }
   };
 
@@ -158,6 +168,8 @@ document.addEventListener("DOMContentLoaded", () => {
           const upn = (item.userPrincipalName || '').toLowerCase();
           const deviceId = (item.deviceId || '').toLowerCase();
           return name.includes(searchText) || upn.includes(searchText) || deviceId.includes(searchText);
+        } else if (state.currentDisplayType === 'groupAssignments') {
+          return item.policyName.toLowerCase().includes(searchText);
         }
         return true;
       }) : data;
@@ -333,6 +345,8 @@ document.addEventListener("DOMContentLoaded", () => {
       renderPwshTablePage(currentPageData);
     } else if (state.currentDisplayType === 'groupMembers') {
       renderGroupMembersTablePage(currentPageData);
+    } else if (state.currentDisplayType === 'groupAssignments') {
+      renderGroupAssignmentsTablePage(currentPageData);
     }
   };
 
@@ -533,6 +547,23 @@ document.addEventListener("DOMContentLoaded", () => {
         <td style="word-wrap: break-word; white-space: normal;">${upnOrId}</td>
         <td style="word-wrap: break-word; white-space: normal;">${objectId}</td>
         <td style="word-wrap: break-word; white-space: normal;">${objectType}</td>
+      </tr>`;
+      rowIndex++;
+    });
+
+    document.getElementById("configTableBody").innerHTML = rows;
+  };
+
+  const renderGroupAssignmentsTablePage = (assignments) => {
+    let rows = '';
+    let rowIndex = (state.pagination.currentPage - 1) * state.pagination.itemsPerPage;
+
+    assignments.forEach(assignment => {
+      rows += `<tr data-row-index="${rowIndex}">
+        <td style="word-wrap: break-word; white-space: normal;">${assignment.policyName || ''}</td>
+        <td style="word-wrap: break-word; white-space: normal;">${assignment.policyType || ''}</td>
+        <td style="word-wrap: break-word; white-space: normal;">${assignment.intent || ''}</td>
+        <td style="word-wrap: break-word; white-space: normal;">${assignment.targetType || ''}</td>
       </tr>`;
       rowIndex++;
     });
@@ -1049,6 +1080,13 @@ document.addEventListener("DOMContentLoaded", () => {
         <th style="word-wrap: break-word; white-space: normal;">Object ID</th>
         <th style="word-wrap: break-word; white-space: normal;">Object Type</th>
       `;
+    } else if (type === 'groupAssignments') {
+      headerContent = `
+        <th class="sortable" style="word-wrap: break-word; white-space: normal;">Policy Name</th>
+        <th style="word-wrap: break-word; white-space: normal;">Policy Type</th>
+        <th style="word-wrap: break-word; white-space: normal;">Assignment Intent</th>
+        <th style="word-wrap: break-word; white-space: normal;">Target Type</th>
+      `;
     }
     headerRow.innerHTML = headerContent;
     const sortableHeader = document.querySelector('th.sortable');
@@ -1110,6 +1148,35 @@ document.addEventListener("DOMContentLoaded", () => {
       deviceId: m.deviceId || '',
       id: m.id || '', // Include object ID
       ['@odata.type']: m['@odata.type'] || ''
+    }));
+
+    updatePaginationState(flattenedData);
+
+    renderCurrentPage();
+    updatePaginationControls();
+
+    const sortableHeader = document.querySelector('th.sortable');
+    if (sortableHeader) {
+      sortableHeader.classList.remove('desc', 'asc');
+      sortableHeader.classList.add(state.sortDirection);
+    }
+  };
+
+  const updateGroupAssignmentsTable = (assignments, updateDisplay = true) => {
+    if (updateDisplay) {
+      state.currentDisplayType = 'groupAssignments';
+      chrome.storage.local.set({ currentDisplayType: state.currentDisplayType });
+    }
+    state.pagination.itemsPerPage = 10;
+    updateTableHeaders('groupAssignments');
+    assignments.sort((a, b) => (a.policyName || '').localeCompare(b.policyName || ''));
+    if (state.sortDirection === 'desc') assignments.reverse();
+
+    const flattenedData = assignments.map(a => ({
+      policyName: a.policyName || '',
+      policyType: a.policyType || '',
+      intent: a.intent || '',
+      targetType: a.targetType || ''
     }));
 
     updatePaginationState(flattenedData);
@@ -1268,7 +1335,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // ── State Restoration Functions ─────────────────────────────────────────
   const restoreFilterValue = () => {
     chrome.storage.local.get(
-      ['profileFilterValue', 'currentDisplayType', 'targetMode', 'lastComplianceAssignments', 'lastAppAssignments', 'lastConfigAssignments', 'lastPwshAssignments', 'lastGroupMembers'],
+      ['profileFilterValue', 'currentDisplayType', 'targetMode', 'lastComplianceAssignments', 'lastAppAssignments', 'lastConfigAssignments', 'lastPwshAssignments', 'lastGroupMembers', 'lastGroupAssignments'],
       (data) => {
         // Restore target mode
         if (data.targetMode) {
@@ -1299,6 +1366,9 @@ document.addEventListener("DOMContentLoaded", () => {
           } else if (state.currentDisplayType === 'groupMembers' && data.lastGroupMembers) {
             chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments']);
             updateGroupMembersTable(data.lastGroupMembers, false);
+          } else if (state.currentDisplayType === 'groupAssignments' && data.lastGroupAssignments) {
+            chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments', 'lastGroupMembers']);
+            updateGroupAssignmentsTable(data.lastGroupAssignments, false);
           }
         } else {
           clearTableAndPagination();
@@ -1893,6 +1963,245 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       
       showResultNotification(errorMessage, 'error');
+    }
+  };
+
+  // Handle Checking Group Assignments - Check what configurations are assigned to selected group(s)
+  const handleCheckGroupAssignments = async () => {
+    logMessage("checkGroupAssignments clicked");
+    const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
+    if (selected.length === 0) {
+      showResultNotification('Select at least one group to check assignments.', 'error');
+      return;
+    }
+
+    document.getElementById('profileFilterInput').value = '';
+    chrome.storage.local.set({ profileFilterValue: '' });
+    clearTableSelection();
+
+    const selectedGroups = Array.from(selected).map(cb => ({
+      id: cb.value,
+      name: cb.dataset.groupName
+    }));
+
+    const groupNames = selectedGroups.map(g => g.name).join(', ');
+    logMessage(`checkGroupAssignments: Selected groups - ${groupNames}`);
+
+    try {
+      const token = await getToken();
+      logMessage("checkGroupAssignments: Token retrieved successfully");
+
+      showProcessingNotification(`Fetching assignments for selected group(s)...`);
+
+      // Clear other data types from storage
+      chrome.storage.local.remove(['lastConfigAssignments','lastAppAssignments','lastComplianceAssignments','lastPwshAssignments','lastGroupMembers']);
+
+      // Update UI
+      document.getElementById('deviceNameDisplay').textContent = ` - Assignments for: ${groupNames}`;
+
+      const allAssignments = [];
+
+      // Fetch configuration policies
+      logMessage("checkGroupAssignments: Fetching configuration policies...");
+      const configPoliciesData = await fetchJSON("https://graph.microsoft.com/beta/deviceManagement/configurationPolicies?$select=id,name,technologies", {
+        method: "GET",
+        headers: { "Authorization": token, "Content-Type": "application/json" }
+      });
+
+      const configPolicies = configPoliciesData.value || [];
+      logMessage(`checkGroupAssignments: Found ${configPolicies.length} configuration policies`);
+
+      // Fetch device configurations
+      logMessage("checkGroupAssignments: Fetching device configurations...");
+      const deviceConfigsData = await fetchJSON("https://graph.microsoft.com/beta/deviceManagement/deviceConfigurations?$select=id,displayName", {
+        method: "GET",
+        headers: { "Authorization": token, "Content-Type": "application/json" }
+      });
+
+      const deviceConfigs = deviceConfigsData.value || [];
+      logMessage(`checkGroupAssignments: Found ${deviceConfigs.length} device configurations`);
+
+      // Combine all policies
+      const allPolicies = [
+        ...configPolicies.map(p => ({ id: p.id, name: p.name, type: 'Configuration Policy', endpoint: 'configurationPolicies' })),
+        ...deviceConfigs.map(p => ({ id: p.id, name: p.displayName, type: 'Device Configuration', endpoint: 'deviceConfigurations' }))
+      ];
+
+      logMessage(`checkGroupAssignments: Total policies to check: ${allPolicies.length}`);
+
+      // Use batch requests to optimize API calls
+      const batchSize = 20; // Microsoft Graph batch API supports up to 20 requests per batch
+      let processedCount = 0;
+
+      for (let i = 0; i < allPolicies.length; i += batchSize) {
+        const batch = allPolicies.slice(i, i + batchSize);
+        
+        // Create batch request
+        const batchRequests = batch.map((policy, index) => ({
+          id: index.toString(),
+          method: "GET",
+          url: `/deviceManagement/${policy.endpoint}('${policy.id}')/assignments`
+        }));
+
+        const batchRequestBody = {
+          requests: batchRequests
+        };
+
+        try {
+          const batchResponse = await fetchJSON("https://graph.microsoft.com/v1.0/$batch", {
+            method: "POST",
+            headers: { 
+              "Authorization": token, 
+              "Content-Type": "application/json" 
+            },
+            body: JSON.stringify(batchRequestBody)
+          });
+
+          // Process batch responses
+          if (batchResponse.responses) {
+            batchResponse.responses.forEach(response => {
+              if (response.status === 200 && response.body && response.body.value) {
+                const policyIndex = parseInt(response.id);
+                const policy = batch[policyIndex];
+                const assignments = response.body.value;
+
+                // Check if any selected group is assigned to this policy
+                assignments.forEach(assignment => {
+                  if (!assignment.target) return;
+
+                  const targetType = (assignment.target['@odata.type'] || "").toLowerCase().trim();
+                  
+                  if (targetType.includes("groupassignmenttarget")) {
+                    const assignedGroupId = assignment.target.groupId;
+                    
+                    // Check if this group is in our selected groups
+                    const matchedGroup = selectedGroups.find(g => g.id === assignedGroupId);
+                    if (matchedGroup) {
+                      // Determine intent based on target type
+                      let intent = "Included";
+                      if (targetType.includes("exclusion")) {
+                        intent = "Excluded";
+                      }
+
+                      // Determine target type (User vs Device)
+                      let assignmentTargetType = "Device";
+                      if (targetType.includes("user")) {
+                        assignmentTargetType = "User";
+                      }
+
+                      allAssignments.push({
+                        policyName: policy.name,
+                        policyType: policy.type,
+                        intent: intent,
+                        targetType: assignmentTargetType,
+                        groupName: matchedGroup.name
+                      });
+                    }
+                  } else if (targetType.includes("alldevicesassignmenttarget")) {
+                    // All Devices assignment
+                    allAssignments.push({
+                      policyName: policy.name,
+                      policyType: policy.type,
+                      intent: "Included (All Devices)",
+                      targetType: "Device",
+                      groupName: "All Devices"
+                    });
+                  } else if (targetType.includes("allusersassignmenttarget")) {
+                    // All Users assignment
+                    allAssignments.push({
+                      policyName: policy.name,
+                      policyType: policy.type,
+                      intent: "Included (All Users)",
+                      targetType: "User",
+                      groupName: "All Users"
+                    });
+                  }
+                });
+              }
+            });
+          }
+
+          processedCount += batch.length;
+          logMessage(`checkGroupAssignments: Processed ${processedCount}/${allPolicies.length} policies`);
+        } catch (batchError) {
+          logMessage(`checkGroupAssignments: Batch request error - ${batchError.message}`);
+          // Continue with next batch even if this one fails
+        }
+      }
+
+      // Also fetch compliance policies
+      logMessage("checkGroupAssignments: Fetching compliance policies...");
+      try {
+        const complianceData = await fetchJSON("https://graph.microsoft.com/beta/deviceManagement/deviceCompliancePolicies?$select=id,displayName", {
+          method: "GET",
+          headers: { "Authorization": token, "Content-Type": "application/json" }
+        });
+
+        const compliancePolicies = complianceData.value || [];
+        logMessage(`checkGroupAssignments: Found ${compliancePolicies.length} compliance policies`);
+
+        // Fetch assignments for compliance policies
+        for (const policy of compliancePolicies) {
+          try {
+            const assignmentsData = await fetchJSON(`https://graph.microsoft.com/beta/deviceManagement/deviceCompliancePolicies/${policy.id}/assignments`, {
+              method: "GET",
+              headers: { "Authorization": token, "Content-Type": "application/json" }
+            });
+
+            const assignments = assignmentsData.value || [];
+            assignments.forEach(assignment => {
+              if (!assignment.target) return;
+
+              const targetType = (assignment.target['@odata.type'] || "").toLowerCase().trim();
+              
+              if (targetType.includes("groupassignmenttarget")) {
+                const assignedGroupId = assignment.target.groupId;
+                const matchedGroup = selectedGroups.find(g => g.id === assignedGroupId);
+                
+                if (matchedGroup) {
+                  let intent = "Included";
+                  if (targetType.includes("exclusion")) {
+                    intent = "Excluded";
+                  }
+
+                  let assignmentTargetType = "Device";
+                  if (targetType.includes("user")) {
+                    assignmentTargetType = "User";
+                  }
+
+                  allAssignments.push({
+                    policyName: policy.displayName,
+                    policyType: "Compliance Policy",
+                    intent: intent,
+                    targetType: assignmentTargetType,
+                    groupName: matchedGroup.name
+                  });
+                }
+              }
+            });
+          } catch (error) {
+            logMessage(`checkGroupAssignments: Error fetching compliance policy ${policy.displayName} assignments - ${error.message}`);
+          }
+        }
+      } catch (error) {
+        logMessage(`checkGroupAssignments: Error fetching compliance policies - ${error.message}`);
+      }
+
+      // Store and display results
+      chrome.storage.local.set({ lastGroupAssignments: allAssignments });
+      updateGroupAssignmentsTable(allAssignments);
+      
+      logMessage(`checkGroupAssignments: Found ${allAssignments.length} total assignments`);
+      
+      if (allAssignments.length === 0) {
+        showResultNotification('No assignments found for the selected group(s).', 'info');
+      } else {
+        showResultNotification(`Found ${allAssignments.length} assignment(s) for selected group(s).`, 'success');
+      }
+
+    } catch (error) {
+      logMessage(`checkGroupAssignments: Error - ${error.message}`);
+      showResultNotification('Failed to fetch group assignments: ' + error.message, 'error');
     }
   };
 
@@ -2943,6 +3252,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("removeFromGroups").addEventListener("click", handleRemoveFromGroups);
   document.getElementById("checkGroups").addEventListener("click", handleCheckGroups);
   document.getElementById("checkGroupMembers").addEventListener("click", handleCheckGroupMembers);
+  document.getElementById("checkGroupAssignments").addEventListener("click", handleCheckGroupAssignments);
   document.getElementById("checkCompliance").addEventListener("click", handleCheckCompliance);
   document.getElementById("downloadScript").addEventListener("click", handleDownloadScript);
   document.getElementById("appsAssignment").addEventListener("click", handleAppsAssignment);
@@ -2991,6 +3301,10 @@ document.addEventListener("DOMContentLoaded", () => {
       } else if (state.currentDisplayType === 'groupMembers') {
         chrome.storage.local.get(['lastGroupMembers'], (data) => {
           if (data.lastGroupMembers) updateGroupMembersTable(data.lastGroupMembers, false);
+        });
+      } else if (state.currentDisplayType === 'groupAssignments') {
+        chrome.storage.local.get(['lastGroupAssignments'], (data) => {
+          if (data.lastGroupAssignments) updateGroupAssignmentsTable(data.lastGroupAssignments, false);
         });
       }
     }
