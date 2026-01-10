@@ -260,10 +260,11 @@ input[type="text"]::placeholder {
   margin: 5px 0; 
   width: 100%;
   font-size: 0.85rem;
-  padding: 0 0.5rem;
+  padding: 8px 0.5rem;
   white-space: normal;
-  height: 32px;
-  line-height: 32px;
+  min-height: 32px;
+  height: auto;
+  line-height: 1.2;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -596,6 +597,42 @@ input[type="checkbox"]:disabled + span {
 
 .pagination-btn .material-icons {
   font-size: 18px !important;
+}
+
+/* Export CSV button */
+.export-csv-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-color);
+  color: var(--text-color);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-left: 8px;
+}
+
+.export-csv-btn:hover {
+  background: #26c6da;
+  color: white;
+  border-color: #26c6da;
+}
+
+.export-csv-btn .material-icons {
+  font-size: 18px !important;
+}
+
+[data-theme="dark"] .export-csv-btn {
+  border-color: #444;
+}
+
+[data-theme="dark"] .export-csv-btn:hover {
+  background: #26c6da;
+  color: white;
+  border-color: #26c6da;
 }
 
 .page-numbers {

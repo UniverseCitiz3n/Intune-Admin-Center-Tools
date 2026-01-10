@@ -292,6 +292,110 @@ document.addEventListener("DOMContentLoaded", () => {
     state.pagination.selectedRowIds.clear(); // Clear selection when clearing table
   };
 
+  // exportTableToCsv: Export current table data to CSV file
+  const exportTableToCsv = () => {
+    const data = state.pagination.filteredData;
+    if (!data || data.length === 0) {
+      showResultNotification('No data to export', 'error');
+      return;
+    }
+
+    let csvContent = '';
+    let headers = [];
+    let rows = [];
+
+    // Build CSV based on current display type
+    if (state.currentDisplayType === 'config') {
+      headers = ['Profile Name', 'Group Name', 'Membership Type', 'Target Type'];
+      rows = data.map(item => [
+        item.policyName,
+        item.targets[0].groupName,
+        item.targets[0].membershipType,
+        item.targets[0].targetType
+      ]);
+    } else if (state.currentDisplayType === 'apps') {
+      headers = ['App Name', 'Group Name', 'Membership Type', 'Target Type'];
+      rows = data.map(item => [
+        item.appName,
+        item.targets[0].groupName,
+        item.targets[0].membershipType,
+        item.targets[0].targetType
+      ]);
+    } else if (state.currentDisplayType === 'compliance') {
+      headers = ['Policy Name', 'Group Name', 'Membership Type', 'Target Type'];
+      rows = data.map(item => [
+        item.policyName,
+        item.targets[0].groupName,
+        item.targets[0].membershipType,
+        item.targets[0].targetType
+      ]);
+    } else if (state.currentDisplayType === 'pwsh') {
+      headers = ['Script Name', 'Group Name', 'Membership Type', 'Target Type'];
+      rows = data.map(item => [
+        item.scriptName,
+        item.targets[0].groupName,
+        item.targets[0].membershipType,
+        item.targets[0].targetType
+      ]);
+    } else if (state.currentDisplayType === 'groupMembers') {
+      headers = ['Display Name', 'UPN/Device ID', 'Object ID', 'Type'];
+      rows = data.map(item => [
+        item.displayName || '',
+        item.userPrincipalName || item.deviceId || '',
+        item.id || '',
+        (item['@odata.type'] || '').split('.').pop()
+      ]);
+    } else if (state.currentDisplayType === 'groupAssignments') {
+      headers = ['Configuration Name', 'Configuration Type', 'Intent'];
+      rows = data.map(item => [
+        item.configName || '',
+        item.configType || '',
+        item.intent || ''
+      ]);
+    }
+
+    // Escape CSV values (handle commas, quotes, newlines)
+    const escapeCsvValue = (value) => {
+      if (value === null || value === undefined) return '';
+      const stringValue = String(value);
+      if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+        return `"${stringValue.replace(/"/g, '""')}"`;
+      }
+      return stringValue;
+    };
+
+    // Build CSV string
+    csvContent = headers.map(escapeCsvValue).join(',') + '\n';
+    csvContent += rows.map(row => row.map(escapeCsvValue).join(',')).join('\n');
+
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    
+    // Generate filename based on display type and timestamp
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const typeNames = {
+      'config': 'configuration_assignments',
+      'apps': 'app_assignments',
+      'compliance': 'compliance_assignments',
+      'pwsh': 'powershell_scripts',
+      'groupMembers': 'group_members',
+      'groupAssignments': 'group_assignments'
+    };
+    const filename = `intune_${typeNames[state.currentDisplayType] || 'export'}_${timestamp}.csv`;
+    link.setAttribute('download', filename);
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    showResultNotification(`Exported ${data.length} rows to ${filename}`, 'success');
+    logMessage(`CSV exported: ${filename} (${data.length} rows)`);
+  };
+
   // generateRowId: Generate unique ID for a table row based on content
   const generateRowId = (rowData) => {
     if (state.currentDisplayType === 'config') {
@@ -3394,6 +3498,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (state.pagination.currentPage < state.pagination.totalPages) {
       goToPage(state.pagination.currentPage + 1);
     }
+  });
+
+  // Export CSV button event listener
+  document.getElementById("exportCsvBtn").addEventListener("click", () => {
+    exportTableToCsv();
   });
 
   // Keyboard navigation for pagination

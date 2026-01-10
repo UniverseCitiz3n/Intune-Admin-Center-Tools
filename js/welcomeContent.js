@@ -34,18 +34,16 @@ const WELCOME_CONTENT = {
     ]
   },
 
-  // Template for future versions
+  // Version 1.4 - New features
   '1.4': {
-    title: 'Intune Admin Center Tools v1.4 - New Features!',
-    intro: `Version 1.4 brings exciting new capabilities to help you manage your Intune environment even more efficiently.`,
+    title: 'Welcome to Intune Admin Center Tools v1.4!',
+    intro: `This release adds a streamlined way to review configuration assignments for your groups, along with UX improvements.`,
     changelog: [
-      // Add v1.4 changes here
-      // 'NEW: Example new feature',
-      // 'Improved: Example improvement',
-      // 'Fixed: Example bug fix'
+      'NEW: Check group assignments feature',
+      'NEW: Export table data to CSV',
+      'UI: Improved button text wrapping to prevent truncation'
     ],
     features: [
-      // Keep previous features and add new ones
       'Search and manage Azure AD groups',
       'Check device/user configuration assignments',
       'Manage group memberships (add/remove devices and users)',
@@ -53,14 +51,15 @@ const WELCOME_CONTENT = {
       'View app assignments',
       'Dark/Light theme support',
       'Download PowerShell scripts for automation',
-      // Add new features for v1.4 here
-      // 'New feature example'
+      'Check group assignments',
+      'Export output tables to CSV (new)'
     ],
     tips: [
       'Use Ctrl+Shift+W to show this welcome message anytime',
       'The extension works on any Intune Admin Center page',
       'Switch between Device and User modes using the toggle buttons',
-      'Filter results using the search boxes for better navigation'
+      'Filter results using the search boxes for better navigation',
+      'Click the download icon in the pagination area to export the table to CSV'
     ]
   },
 
