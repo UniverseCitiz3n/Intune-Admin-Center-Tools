@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>MS Graph API Caller</title>
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="notification-bar"></div>
+  <div class="container">
+    <div class="header-container">      <h5 class="header">
+        <img src="extension_icon32.png" alt="Extension Icon">
+        Intune Admin Center Tools
+      </h5>
+      <div class="header-controls">
+        <div class="settings-menu">
+          <button id="settingsButton" class="settings-btn" title="Settings">
+            <i class="material-icons">more_vert</i>
+          </button>
+          <div id="settingsDropdown" class="settings-dropdown">
+            <a href="#" id="showWelcomeOption">
+              <i class="material-icons">help_outline</i>
+              Show Welcome Guide
+            </a>
+            <a href="#" id="resetWelcomeOption">
+              <i class="material-icons">refresh</i>
+              Reset Welcome Status
+            </a>
+            <a href="#" id="clearStorageOption">
+              <i class="material-icons">delete_sweep</i>
+              Clear Extension Storage
+            </a>
+            <div class="settings-divider"></div>
+            <div class="version-info">
+              <i class="material-icons">info_outline</i>
+              Version <span id="extensionVersion">1.3</span>
+            </div>
+          </div>
+        </div>
+        <div class="theme-switch-wrapper">
+          <span class="theme-label">
+            <i class="material-icons mode-icon light-icon">wb_sunny</i>
+          </span>
+          <div class="theme-switch-container">
+            <button id="theme-toggle" class="theme-button">
+              <span class="theme-icon"></span>
+            </button>
+          </div>
+          <span class="theme-label">
+            <i class="material-icons mode-icon dark-icon">nights_stay</i>
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    <div class="main-content">
+      <div class="output-area">
+        <!-- Search and Group Results -->
+        <div class="input-field">
+          <input type="text" id="groupSearchInput" placeholder="Enter group name">
+        </div>
+        <div class="button-row">
+          <a id="searchGroup" class="waves-effect waves-light btn cyan lighten-1">Search Groups</a>
+          <a id="createGroup" class="waves-effect waves-light btn cyan lighten-1">Create Group</a>        </div>
+        <div id="groupResults"></div>        <!-- Configuration Table -->
+        <div id="configTable">
+          <h6>Configuration Assignments <span id="deviceNameDisplay"></span></h6>          <div class="input-field profile-filter-container">
+            <input type="text" id="profileFilterInput" placeholder="Filter by name...">
+          </div>
+          <table class="striped">
+            <thead>
+              <tr>
+                <th class="sortable">Profile Name</th>
+                <th>Group Name</th>
+                <th>Membership Type</th>
+                <th>Target Type</th>
+              </tr>
+            </thead>
+            <tbody id="configTableBody">
+              <!-- Dynamic content -->
+            </tbody>
+          </table>
+          
+          <!-- Pagination Controls -->
+          <div id="paginationContainer" class="pagination-container" style="display: none;">
+            <div class="pagination-info">
+              <span id="paginationResults">Showing 1–10 of 0 results</span>
+            </div>
+            <div class="pagination-controls">
+              <button id="prevPageBtn" class="pagination-btn" disabled>
+                <i class="material-icons">chevron_left</i>
+              </button>
+              <div id="pageNumbers" class="page-numbers">
+                <!-- Dynamic page numbers -->
+              </div>
+              <button id="nextPageBtn" class="pagination-btn" disabled>
+                <i class="material-icons">chevron_right</i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>      <div class="controls-area">
+        <!-- Target Type Toggle -->
+        <div class="target-type-toggle">          <button id="deviceModeBtn" class="active" data-mode="device">
+            <i class="material-icons">devices</i>
+            Device
+          </button>
+          <button id="userModeBtn" data-mode="user">
+            <i class="material-icons">person</i>
+            User
+          </button>
+        </div>
+        
+        <a id="addToGroups" class="waves-effect waves-light btn cyan lighten-1">
+          <span id="addBtnText">Add Device to Groups</span>
+        </a>
+        <a id="removeFromGroups" class="waves-effect waves-light btn cyan lighten-1">
+          <span id="removeBtnText">Remove Device from Groups</span>
+        </a>
+        <a id="checkGroupMembers" class="waves-effect waves-light btn cyan lighten-1">Check group members</a>
+        <a id="checkGroups" class="waves-effect waves-light btn cyan lighten-1">Configuration Assignment</a>
+
+        <!-- New Feature Buttons -->
+        <a id="checkCompliance" class="waves-effect waves-light btn cyan lighten-1">Compliance Assignment</a>
+        <a id="appsAssignment" class="waves-effect waves-light btn cyan lighten-1">Apps Assignment</a>
+        <a id="downloadScript" class="waves-effect waves-light btn cyan lighten-1">Download PwSh Script</a>
+        <a id="pwshProfiles" class="waves-effect waves-light btn cyan lighten-1">PwSh Profiles</a>
+        <a id="collectLogs" class="waves-effect waves-light btn cyan lighten-1">Collect log files</a>
+      </div>
+    </div>
+  </div>
+  <script src="js/parseJSON.js"></script>
+  <script src="js/logMessage.js"></script>
+  <script src="js/showNotification.js"></script>
+  <script src="js/welcomeContent.js"></script>
+  <script src="js/welcomeNotification.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
