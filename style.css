@@ -8,6 +8,8 @@
   --group-text: #000000;
   --btn-text: #ffffff;
   --btn-shadow: rgba(0, 0, 0, 0.24);
+  --btn-modern-height: 60px;
+  --btn-modern-full-width-height: 40px;
 }
 
 [data-theme="dark"] {
@@ -428,7 +430,7 @@ table {
   padding: 8px 4px;
   cursor: pointer;
   transition: all 0.2s ease;
-  height: 60px; /* Fixed height for uniformity */
+  height: var(--btn-modern-height);
   box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
 
@@ -455,7 +457,7 @@ table {
 .full-width {
   grid-column: span 2;
   flex-direction: row;
-  height: 40px;
+  height: var(--btn-modern-full-width-height);
   gap: 8px;
 }
 
