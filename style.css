@@ -13,6 +13,8 @@
   --btn-modern-bg: #ffffff;
   --btn-modern-hover-bg: #f5f5f5;
   --scrollbar-thumb: rgba(0, 0, 0, 0.2);
+  --accent-color: #26c6da;
+  --warning-color: #ff9800;
 }
 
 [data-theme="dark"] {
@@ -28,6 +30,8 @@
   --btn-modern-bg: #2d2d2d;
   --btn-modern-hover-bg: #383838;
   --scrollbar-thumb: rgba(255, 255, 255, 0.2);
+  --accent-color: #26c6da;
+  --warning-color: #ff9800;
 }
 
 body { 
@@ -376,7 +380,18 @@ table {
 .output-area {
   flex: 3;
 }
-/* --- V2.0 Sidebar Layout --- */
+
+/* ═══════════════════════════════════════════════════════════════
+   V2.0 Sidebar Layout - Modern Grid-Based Controls
+   ═══════════════════════════════════════════════════════════════
+   Features:
+   - Card-based semantic grouping with headers (Membership, Assignments, Tools)
+   - 2-column grid layout for buttons (doubles vertical space efficiency)
+   - Sticky Target Mode toggle at top
+   - Scrollable actions area with custom scrollbar
+   - Icon-first design with accent colors
+   - Full dark mode support via CSS variables
+   ═══════════════════════════════════════════════════════════════ */
 
 .controls-area {
   flex: 1;
@@ -444,14 +459,14 @@ table {
   background-color: var(--btn-modern-hover-bg);
   transform: translateY(-1px);
   box-shadow: 0 3px 6px rgba(0,0,0,0.1);
-  border-color: #26c6da;
+  border-color: var(--accent-color);
 }
 
 /* Icons in buttons */
 .btn-modern i {
   font-size: 20px;
   margin-bottom: 4px;
-  color: #26c6da; /* Accent color */
+  color: var(--accent-color);
 }
 
 .btn-modern span {
@@ -473,7 +488,7 @@ table {
 
 /* Warning Action Style (e.g. Logs) */
 .warning-action:hover i {
-  color: #ff9800;
+  color: var(--warning-color);
 }
 
 /* Custom Scrollbar for the button list */
