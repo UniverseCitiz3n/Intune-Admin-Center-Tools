@@ -15,6 +15,10 @@
   --scrollbar-thumb: rgba(0, 0, 0, 0.2);
   --accent-color: #26c6da;
   --warning-color: #ff9800;
+  --controls-area-min-width: 200px;
+  --grid-gap: 8px;
+  --scrollbar-spacing: 5px;
+  --scrollbar-width: 6px;
 }
 
 [data-theme="dark"] {
@@ -381,24 +385,22 @@ table {
   flex: 3;
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   V2.0 Sidebar Layout - Modern Grid-Based Controls
-   ═══════════════════════════════════════════════════════════════
-   Features:
-   - Card-based semantic grouping with headers (Membership, Assignments, Tools)
-   - 2-column grid layout for buttons (doubles vertical space efficiency)
-   - Sticky Target Mode toggle at top
-   - Scrollable actions area with custom scrollbar
-   - Icon-first design with accent colors
-   - Full dark mode support via CSS variables
-   ═══════════════════════════════════════════════════════════════ */
+/* V2.0 Sidebar Layout - Modern Grid-Based Controls
+ * Features:
+ * - Card-based semantic grouping with headers (Membership, Assignments, Tools)
+ * - 2-column grid layout for buttons (doubles vertical space efficiency)
+ * - Sticky Target Mode toggle at top
+ * - Scrollable actions area with custom scrollbar
+ * - Icon-first design with accent colors
+ * - Full dark mode support via CSS variables
+ */
 
 .controls-area {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 15px;
-  min-width: 200px; /* Slightly wider for the grid */
+  min-width: var(--controls-area-min-width);
   height: 100%; /* Ensure it takes full height */
   overflow: hidden; /* Prevent outer scroll */
 }
@@ -407,7 +409,7 @@ table {
 .control-card, .control-group {
   background: var(--header-bg);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--grid-gap);
   padding: 10px;
   margin-bottom: 12px;
 }
@@ -419,14 +421,14 @@ table {
   letter-spacing: 0.5px;
   color: var(--text-color);
   opacity: 0.7;
-  margin: 0 0 8px 0;
+  margin: 0 0 var(--grid-gap) 0;
   font-weight: 600;
 }
 
 /* Scroller for the buttons (keeps the toggle sticky at top) */
 .actions-scroller {
   overflow-y: auto;
-  padding-right: 5px; /* Space for scrollbar */
+  padding-right: var(--scrollbar-spacing);
   flex: 1;
 }
 
@@ -434,7 +436,7 @@ table {
 .action-grid {
   display: grid;
   grid-template-columns: 1fr 1fr; /* 2 columns */
-  gap: 8px;
+  gap: var(--grid-gap);
 }
 
 /* Modern Button Style */
@@ -479,7 +481,7 @@ table {
   grid-column: span 2;
   flex-direction: row;
   height: var(--btn-modern-full-width-height);
-  gap: 8px;
+  gap: var(--grid-gap);
 }
 
 .full-width i {
@@ -493,7 +495,7 @@ table {
 
 /* Custom Scrollbar for the button list */
 .actions-scroller::-webkit-scrollbar {
-  width: 6px;
+  width: var(--scrollbar-width);
 }
 .actions-scroller::-webkit-scrollbar-thumb {
   background-color: var(--scrollbar-thumb);
