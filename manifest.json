@@ -1,0 +1,39 @@
+{
+    "manifest_version": 3,
+    "name": "Intune Admin Center Tools",
+    "version": "1.4",
+    "description": "Tools for managing Intune devices: check app and config assignments, manage group memberships, download PowerShell script, and more.",
+    "permissions": [
+        "webRequest",
+        "storage",
+        "activeTab"
+    ],
+    "icons": {
+        "16": "extension_icon16.png",
+        "32": "extension_icon32.png",
+        "48": "extension_icon48.png",
+        "128": "extension_icon128.png"
+    },
+    "host_permissions": [
+        "*://graph.microsoft.com/*",
+        "https://intune.microsoft.com/*"
+    ],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "https://intune.microsoft.com/*"
+            ],
+            "js": [
+                "content.js"
+            ],
+            "run_at": "document_end"
+        }
+    ],
+    "action": {
+        "default_popup": "popup.html",
+        "default_title": "Intune Admin Center Tools"
+    }
+}

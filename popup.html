@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>MS Graph API Caller</title>
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="notification-bar"></div>
+  <div class="container">
+    <div class="header-container">      <h5 class="header">
+        <img src="extension_icon32.png" alt="Extension Icon">
+        Intune Admin Center Tools
+      </h5>
+      <div class="header-controls">
+        <div class="settings-menu">
+          <button id="settingsButton" class="settings-btn" title="Settings">
+            <i class="material-icons">more_vert</i>
+          </button>
+          <div id="settingsDropdown" class="settings-dropdown">
+            <a href="#" id="showWelcomeOption">
+              <i class="material-icons">help_outline</i>
+              Show Welcome Guide
+            </a>
+            <a href="#" id="resetWelcomeOption">
+              <i class="material-icons">refresh</i>
+              Reset Welcome Status
+            </a>
+            <a href="#" id="clearStorageOption">
+              <i class="material-icons">delete_sweep</i>
+              Clear Extension Storage
+            </a>
+            <div class="settings-divider"></div>
+            <div class="version-info">
+              <i class="material-icons">info_outline</i>
+              Version <span id="extensionVersion">1.4</span>
+            </div>
+          </div>
+        </div>
+        <div class="theme-switch-wrapper">
+          <span class="theme-label">
+            <i class="material-icons mode-icon light-icon">wb_sunny</i>
+          </span>
+          <div class="theme-switch-container">
+            <button id="theme-toggle" class="theme-button">
+              <span class="theme-icon"></span>
+            </button>
+          </div>
+          <span class="theme-label">
+            <i class="material-icons mode-icon dark-icon">nights_stay</i>
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    <div class="main-content">
+      <div class="output-area">
+        <!-- Search and Group Results -->
+        <div class="input-field">
+          <input type="text" id="groupSearchInput" placeholder="Enter group name">
+        </div>
+        <div class="button-row">
+          <a id="searchGroup" class="waves-effect waves-light btn cyan lighten-1">Search Groups</a>
+          <a id="createGroup" class="waves-effect waves-light btn cyan lighten-1">Create Group</a>        </div>
+        <div id="groupResults"></div>        <!-- Configuration Table -->
+        <div id="configTable">
+          <h6>Configuration Assignments <span id="deviceNameDisplay"></span></h6>          <div class="input-field profile-filter-container">
+            <input type="text" id="profileFilterInput" placeholder="Filter by name...">
+          </div>
+          <table class="striped">
+            <thead>
+              <tr>
+                <th class="sortable">Profile Name</th>
+                <th>Group Name</th>
+                <th>Membership Type</th>
+                <th>Target Type</th>
+              </tr>
+            </thead>
+            <tbody id="configTableBody">
+              <!-- Dynamic content -->
+            </tbody>
+          </table>
+          
+          <!-- Pagination Controls -->
+          <div id="paginationContainer" class="pagination-container" style="display: none;">
+            <div class="pagination-info">
+              <span id="paginationResults">Showing 1–10 of 0 results</span>
+            </div>
+            <div class="pagination-controls">
+              <button id="prevPageBtn" class="pagination-btn" disabled>
+                <i class="material-icons">chevron_left</i>
+              </button>
+              <div id="pageNumbers" class="page-numbers">
+                <!-- Dynamic page numbers -->
+              </div>
+              <button id="nextPageBtn" class="pagination-btn" disabled>
+                <i class="material-icons">chevron_right</i>
+              </button>
+              <button id="exportCsvBtn" class="export-csv-btn" title="Export to CSV">
+                <i class="material-icons">download</i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="controls-area">
+
+        <div class="control-card">
+          <div class="card-header">Target Mode</div>
+          <div class="target-type-toggle">
+            <button id="deviceModeBtn" class="active" data-mode="device">
+              <i class="material-icons">devices</i> Device
+            </button>
+            <button id="userModeBtn" data-mode="user">
+              <i class="material-icons">person</i> User
+            </button>
+          </div>
+        </div>
+
+        <div class="actions-scroller">
+
+          <div class="control-group">
+            <h6 class="group-title">Membership</h6>
+            <div class="action-grid">
+              <a id="addToGroups" class="btn-modern" role="button">
+                <i class="material-icons">group_add</i>
+                <span id="addBtnText">Add</span>
+              </a>
+              <a id="removeFromGroups" class="btn-modern" role="button">
+                <i class="material-icons">group_remove</i>
+                <span id="removeBtnText">Remove</span>
+              </a>
+              <a id="checkGroupMembers" class="btn-modern full-width" role="button">
+                <i class="material-icons">people_outline</i>
+                <span>Check Members</span>
+              </a>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <h6 class="group-title">Assignments</h6>
+            <div class="action-grid">
+              <a id="checkGroups" class="btn-modern" role="button">
+                <i class="material-icons">settings</i>
+                <span>Config</span>
+              </a>
+              <a id="checkCompliance" class="btn-modern" role="button">
+                <i class="material-icons">verified_user</i>
+                <span>Compliance</span>
+              </a>
+              <a id="appsAssignment" class="btn-modern" role="button">
+                <i class="material-icons">apps</i>
+                <span>Apps</span>
+              </a>
+              <a id="checkGroupAssignments" class="btn-modern" role="button">
+                <i class="material-icons">assignment_ind</i>
+                <span>Group</span>
+              </a>
+              <a id="pwshProfiles" class="btn-modern full-width" role="button">
+                <i class="material-icons">terminal</i>
+                <span>PowerShell</span>
+              </a>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <h6 class="group-title">Tools & Diagnostics</h6>
+            <div class="action-grid">
+              <a id="downloadScript" class="btn-modern full-width" role="button">
+                <i class="material-icons">download</i>
+                <span>PowerShell Script</span>
+              </a>
+              <a id="collectLogs" class="btn-modern full-width warning-action" role="button">
+                <i class="material-icons">bug_report</i>
+                <span>Collect Logs</span>
+              </a>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="js/parseJSON.js"></script>
+  <script src="js/logMessage.js"></script>
+  <script src="js/showNotification.js"></script>
+  <script src="js/welcomeContent.js"></script>
+  <script src="js/welcomeNotification.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
