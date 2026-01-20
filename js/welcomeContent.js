@@ -6,7 +6,7 @@
  */
 
 const WELCOME_CONTENT = {
-  // Version 1.3 - Current version
+  // Version 1.3 
   '1.3': {
     title: 'Welcome to Intune Admin Center Tools v1.3!',
     intro: `Thank you for using Intune Admin Center Tools! This extension helps you efficiently manage Intune devices, check assignments, and handle group memberships directly from the Intune Admin Center.`,
@@ -41,7 +41,7 @@ const WELCOME_CONTENT = {
     changelog: [
       'NEW: Check group assignments feature',
       'NEW: Export table data to CSV',
-      'UI: Improved button text wrapping to prevent truncation'
+      'UI: Freshened user interface for better usability',
     ],
     features: [
       'Search and manage Azure AD groups',

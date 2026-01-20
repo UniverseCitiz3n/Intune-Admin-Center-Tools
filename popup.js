@@ -2166,6 +2166,220 @@ document.addEventListener("DOMContentLoaded", () => {
         logMessage(`checkGroupAssignments: Shell scripts fetch failed (may not be available): ${shellError.message}`);
       }
 
+      // Fetch Security Baselines (Settings Catalog based - new style)
+      logMessage("checkGroupAssignments: Fetching security baseline templates...");
+      try {
+        const securityBaselineTemplatesResponse = await fetchJSON("https://graph.microsoft.com/beta/deviceManagement/configurationPolicyTemplates?$top=500&$filter=(lifecycleState eq 'draft' or lifecycleState eq 'active') and (templateFamily eq 'Baseline')", {
+          method: "GET",
+          headers: { "Authorization": token, "Content-Type": "application/json" }
+        });
+
+        if (securityBaselineTemplatesResponse.value) {
+          // For each baseline template, fetch policies that use it
+          for (const template of securityBaselineTemplatesResponse.value) {
+            try {
+              const baselinePoliciesResponse = await fetchJSON(`https://graph.microsoft.com/beta/deviceManagement/configurationPolicies?$select=id,name&$filter=(templateReference/TemplateId eq '${template.id}') and (templateReference/TemplateFamily eq 'Baseline')`, {
+                method: "GET",
+                headers: { "Authorization": token, "Content-Type": "application/json" }
+              });
+
+              if (baselinePoliciesResponse.value) {
+                for (const policy of baselinePoliciesResponse.value) {
+                  configsToCheck.push({
+                    id: policy.id,
+                    displayName: policy.name || 'Unknown Security Baseline',
+                    type: 'Security Baseline',
+                    endpoint: `/deviceManagement/configurationPolicies('${policy.id}')/assignments`
+                  });
+                }
+              }
+            } catch (policyError) {
+              logMessage(`checkGroupAssignments: Error fetching policies for baseline template ${template.id}: ${policyError.message}`);
+            }
+          }
+        }
+      } catch (baselineError) {
+        logMessage(`checkGroupAssignments: Security baseline templates fetch failed: ${baselineError.message}`);
+      }
+
+      // Fetch Security Baselines (Intent based - legacy style)
+      logMessage("checkGroupAssignments: Fetching legacy security baseline intents...");
+      const legacyBaselineTemplateIds = [
+        '034ccd46-190c-4afc-adf1-ad7cc11262eb', // Windows Security Baseline
+        'c04a010a-e7c5-44b1-a814-88df6f053f16', // Windows Security Baseline (older)
+        '2209e067-9c8c-462e-9981-5a8c79165dcc', // Defender ATP Baseline
+        'a8d6fa0e-1e66-455b-bb51-8ce0dde1559e', // Edge Baseline
+        'cef15778-c3b9-4d53-a00a-042929f0aad0'  // Microsoft 365 Apps Baseline
+      ];
+      
+      try {
+        const filterConditions = legacyBaselineTemplateIds.map(id => `templateId eq '${id}'`).join(' or ');
+        const intentsResponse = await fetchJSON(`https://graph.microsoft.com/beta/deviceManagement/intents?$filter=${encodeURIComponent(filterConditions)}`, {
+          method: "GET",
+          headers: { "Authorization": token, "Content-Type": "application/json" }
+        });
+
+        if (intentsResponse.value) {
+          for (const intent of intentsResponse.value) {
+            configsToCheck.push({
+              id: intent.id,
+              displayName: intent.displayName || 'Unknown Security Baseline',
+              type: 'Security Baseline (Legacy)',
+              endpoint: `/deviceManagement/intents/${intent.id}/assignments`
+            });
+          }
+        }
+      } catch (intentsError) {
+        logMessage(`checkGroupAssignments: Legacy security baseline intents fetch failed: ${intentsError.message}`);
+      }
+
+      // Fetch Enrollment Restrictions (with assignments expanded)
+      logMessage("checkGroupAssignments: Fetching enrollment restrictions...");
+      try {
+        const enrollmentRestrictionsResponse = await fetchJSON("https://graph.microsoft.com/beta/deviceManagement/deviceEnrollmentConfigurations?$expand=assignments", {
+          method: "GET",
+          headers: { "Authorization": token, "Content-Type": "application/json" }
+        });
+
+        if (enrollmentRestrictionsResponse.value) {
+          for (const config of enrollmentRestrictionsResponse.value) {
+            // Determine the type based on deviceEnrollmentConfigurationType or @odata.type
+            let configType = 'Enrollment Configuration';
+            const odataType = config['@odata.type'] || '';
+            const enrollmentType = config.deviceEnrollmentConfigurationType || '';
+            
+            if (odataType.includes('LimitConfiguration') || enrollmentType === 'limit') {
+              configType = 'Device Limit Restriction';
+            } else if (odataType.includes('PlatformRestrictions') || enrollmentType === 'platformRestrictions' || enrollmentType === 'singlePlatformRestriction') {
+              configType = 'Platform Restriction';
+            } else if (odataType.includes('WindowsHelloForBusiness') || enrollmentType === 'windowsHelloForBusiness') {
+              configType = 'Windows Hello for Business';
+            } else if (odataType.includes('EnrollmentCompletionPage') || enrollmentType === 'windows10EnrollmentCompletionPageConfiguration') {
+              configType = 'Enrollment Status Page';
+            } else if (odataType.includes('windowsRestore') || enrollmentType === 'windowsRestore') {
+              configType = 'Windows Restore';
+            }
+
+            // Check if the group is in the assignments (already expanded)
+            if (config.assignments && config.assignments.length > 0) {
+              for (const assignment of config.assignments) {
+                if (!assignment.target) continue;
+
+                const targetType = (assignment.target['@odata.type'] || '').toLowerCase();
+                const targetGroupId = assignment.target.groupId;
+
+                if (targetGroupId === groupId) {
+                  let intent = 'Included';
+                  if (targetType.includes('exclusion')) {
+                    intent = 'Excluded';
+                  }
+
+                  allAssignments.push({
+                    configName: config.displayName || 'Unknown',
+                    configType: configType,
+                    intent: intent
+                  });
+                }
+              }
+            }
+          }
+        }
+      } catch (enrollmentError) {
+        logMessage(`checkGroupAssignments: Enrollment restrictions fetch failed: ${enrollmentError.message}`);
+      }
+
+      // Fetch Autopilot v2 (Device Preparation) profiles
+      logMessage("checkGroupAssignments: Fetching Autopilot v2 (Device Preparation) profiles...");
+      try {
+        const autopilotV2Response = await fetchJSON("https://graph.microsoft.com/beta/deviceManagement/configurationPolicies?$select=id,name&$filter=(technologies has 'enrollment') and (platforms eq 'windows10') and (TemplateReference/templateId eq '80d33118-b7b4-40d8-b15f-81be745e053f_1') and (Templatereference/templateFamily eq 'enrollmentConfiguration')", {
+          method: "GET",
+          headers: { "Authorization": token, "Content-Type": "application/json" }
+        });
+
+        if (autopilotV2Response.value) {
+          for (const profile of autopilotV2Response.value) {
+            // Add to configsToCheck for standard assignments
+            configsToCheck.push({
+              id: profile.id,
+              displayName: profile.name || 'Unknown Device Preparation Profile',
+              type: 'Autopilot Device Preparation',
+              endpoint: `/deviceManagement/configurationPolicies('${profile.id}')/assignments`
+            });
+
+            // Also check enrollmentTimeDeviceMembershipTarget for device group assignments
+            try {
+              const deviceMembershipResponse = await fetchJSON(`https://graph.microsoft.com/beta/deviceManagement/configurationPolicies('${profile.id}')/retrieveEnrollmentTimeDeviceMembershipTarget`, {
+                method: "GET",
+                headers: { "Authorization": token, "Content-Type": "application/json" }
+              });
+
+              if (deviceMembershipResponse.enrollmentTimeDeviceMembershipTargetValidationStatuses) {
+                for (const status of deviceMembershipResponse.enrollmentTimeDeviceMembershipTargetValidationStatuses) {
+                  if (status.targetId === groupId) {
+                    allAssignments.push({
+                      configName: profile.name || 'Unknown Device Preparation Profile',
+                      configType: 'Autopilot Device Preparation (Device Group)',
+                      intent: 'Included'
+                    });
+                  }
+                }
+              }
+            } catch (deviceMembershipError) {
+              logMessage(`checkGroupAssignments: Device membership target fetch failed for profile ${profile.id}: ${deviceMembershipError.message}`);
+            }
+          }
+        }
+      } catch (autopilotV2Error) {
+        logMessage(`checkGroupAssignments: Autopilot v2 profiles fetch failed: ${autopilotV2Error.message}`);
+      }
+
+      // Fetch Autopilot v1 Deployment Profiles (with assignments expanded)
+      logMessage("checkGroupAssignments: Fetching Autopilot v1 deployment profiles...");
+      try {
+        const autopilotV1Response = await fetchJSON("https://graph.microsoft.com/beta/deviceManagement/windowsAutopilotDeploymentProfiles?$expand=assignments&$top=500", {
+          method: "GET",
+          headers: { "Authorization": token, "Content-Type": "application/json" }
+        });
+
+        if (autopilotV1Response.value) {
+          for (const profile of autopilotV1Response.value) {
+            // Determine profile type based on @odata.type
+            const odataType = profile['@odata.type'] || '';
+            let profileType = 'Autopilot Deployment Profile';
+            if (odataType.includes('activeDirectory')) {
+              profileType = 'Autopilot Hybrid Join Profile';
+            } else if (odataType.includes('azureAD')) {
+              profileType = 'Autopilot Entra Join Profile';
+            }
+
+            // Check if the group is in the assignments (already expanded)
+            if (profile.assignments && profile.assignments.length > 0) {
+              for (const assignment of profile.assignments) {
+                if (!assignment.target) continue;
+
+                const targetType = (assignment.target['@odata.type'] || '').toLowerCase();
+                const targetGroupId = assignment.target.groupId;
+
+                if (targetGroupId === groupId) {
+                  let intent = 'Included';
+                  if (targetType.includes('exclusion')) {
+                    intent = 'Excluded';
+                  }
+
+                  allAssignments.push({
+                    configName: profile.displayName || 'Unknown',
+                    configType: profileType,
+                    intent: intent
+                  });
+                }
+              }
+            }
+          }
+        }
+      } catch (autopilotV1Error) {
+        logMessage(`checkGroupAssignments: Autopilot v1 profiles fetch failed: ${autopilotV1Error.message}`);
+      }
+
       logMessage(`checkGroupAssignments: Total configurations to check: ${configsToCheck.length}`);
 
       // Now fetch assignments for each configuration using batched requests
