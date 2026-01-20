@@ -103,34 +103,82 @@
             </div>
           </div>
         </div>
-      </div>      <div class="controls-area">
-        <!-- Target Type Toggle -->
-        <div class="target-type-toggle">          <button id="deviceModeBtn" class="active" data-mode="device">
-            <i class="material-icons">devices</i>
-            Device
-          </button>
-          <button id="userModeBtn" data-mode="user">
-            <i class="material-icons">person</i>
-            User
-          </button>
-        </div>
-        
-        <a id="addToGroups" class="waves-effect waves-light btn cyan lighten-1">
-          <span id="addBtnText">Add Device to Groups</span>
-        </a>
-        <a id="removeFromGroups" class="waves-effect waves-light btn cyan lighten-1">
-          <span id="removeBtnText">Remove Device from Groups</span>
-        </a>
-        <a id="checkGroupMembers" class="waves-effect waves-light btn cyan lighten-1">Check group members</a>
-        <a id="checkGroupAssignments" class="waves-effect waves-light btn cyan lighten-1">Check Group Assignments</a>
-        <a id="checkGroups" class="waves-effect waves-light btn cyan lighten-1">Configuration Assignment</a>
+      </div>
+      <div class="controls-area">
 
-        <!-- New Feature Buttons -->
-        <a id="checkCompliance" class="waves-effect waves-light btn cyan lighten-1">Compliance Assignment</a>
-        <a id="appsAssignment" class="waves-effect waves-light btn cyan lighten-1">Apps Assignment</a>
-        <a id="downloadScript" class="waves-effect waves-light btn cyan lighten-1">Download PwSh Script</a>
-        <a id="pwshProfiles" class="waves-effect waves-light btn cyan lighten-1">PwSh Profiles</a>
-        <a id="collectLogs" class="waves-effect waves-light btn cyan lighten-1">Collect log files</a>
+        <div class="control-card">
+          <div class="card-header">Target Mode</div>
+          <div class="target-type-toggle">
+            <button id="deviceModeBtn" class="active" data-mode="device">
+              <i class="material-icons">devices</i> Device
+            </button>
+            <button id="userModeBtn" data-mode="user">
+              <i class="material-icons">person</i> User
+            </button>
+          </div>
+        </div>
+
+        <div class="actions-scroller">
+
+          <div class="control-group">
+            <h6 class="group-title">Membership</h6>
+            <div class="action-grid">
+              <a id="addToGroups" class="btn-modern" role="button">
+                <i class="material-icons">group_add</i>
+                <span id="addBtnText">Add</span>
+              </a>
+              <a id="removeFromGroups" class="btn-modern" role="button">
+                <i class="material-icons">group_remove</i>
+                <span id="removeBtnText">Remove</span>
+              </a>
+              <a id="checkGroupMembers" class="btn-modern full-width" role="button">
+                <i class="material-icons">people_outline</i>
+                <span>Check Members</span>
+              </a>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <h6 class="group-title">Assignments</h6>
+            <div class="action-grid">
+              <a id="checkGroups" class="btn-modern" role="button">
+                <i class="material-icons">settings</i>
+                <span>Config</span>
+              </a>
+              <a id="checkCompliance" class="btn-modern" role="button">
+                <i class="material-icons">verified_user</i>
+                <span>Compliance</span>
+              </a>
+              <a id="appsAssignment" class="btn-modern" role="button">
+                <i class="material-icons">apps</i>
+                <span>Apps</span>
+              </a>
+              <a id="checkGroupAssignments" class="btn-modern" role="button">
+                <i class="material-icons">assignment_ind</i>
+                <span>Group</span>
+              </a>
+              <a id="pwshProfiles" class="btn-modern full-width" role="button">
+                <i class="material-icons">terminal</i>
+                <span>PowerShell</span>
+              </a>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <h6 class="group-title">Tools & Diagnostics</h6>
+            <div class="action-grid">
+              <a id="downloadScript" class="btn-modern full-width" role="button">
+                <i class="material-icons">download</i>
+                <span>PowerShell Script</span>
+              </a>
+              <a id="collectLogs" class="btn-modern full-width warning-action" role="button">
+                <i class="material-icons">bug_report</i>
+                <span>Collect Logs</span>
+              </a>
+            </div>
+          </div>
+
+        </div>
       </div>
     </div>
   </div>

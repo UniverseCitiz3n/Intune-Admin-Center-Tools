@@ -1116,8 +1116,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // updateButtonText: Update button text based on current target mode
   const updateButtonText = () => {
     const targetType = state.targetMode === 'device' ? 'Device' : 'User';
-    document.getElementById('addBtnText').textContent = `Add ${targetType} to Groups`;
-    document.getElementById('removeBtnText').textContent = `Remove ${targetType} from Groups`;
+    document.getElementById('addBtnText').textContent = `Add`;
+    document.getElementById('removeBtnText').textContent = `Remove`;
     logMessage(`updateButtonText: Updated buttons for ${targetType} mode`);
   };
 
@@ -3469,8 +3469,8 @@ document.addEventListener("DOMContentLoaded", () => {
         applyTheme(currentTheme);
         document.getElementById('deviceModeBtn').classList.add('active');
         document.getElementById('userModeBtn').classList.remove('active');
-        document.getElementById('addBtnText').textContent = 'Add Device to Groups';
-        document.getElementById('removeBtnText').textContent = 'Remove Device from Groups';
+        document.getElementById('addBtnText').textContent = 'Add';
+        document.getElementById('removeBtnText').textContent = 'Remove';
         
         // Clear all table content
         document.getElementById('configTableBody').innerHTML = '';

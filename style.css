@@ -8,6 +8,19 @@
   --group-text: #000000;
   --btn-text: #ffffff;
   --btn-shadow: rgba(0, 0, 0, 0.24);
+  --btn-modern-height: 60px;
+  --btn-modern-full-width-height: 40px;
+  --btn-modern-bg: #ffffff;
+  --btn-modern-hover-bg: #f5f5f5;
+  --scrollbar-thumb: rgba(0, 0, 0, 0.2);
+  --accent-color: #26c6da;
+  --warning-color: #ff9800;
+  --controls-area-min-width: 200px;
+  --grid-gap: 8px;
+  --scrollbar-spacing: 5px;
+  --scrollbar-width: 6px;
+  --box-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+  --box-shadow-md: 0 3px 6px rgba(0, 0, 0, 0.1);
 }
 
 [data-theme="dark"] {
@@ -20,6 +33,13 @@
   --group-text: #e0e0e0;
   --btn-text: #e0e0e0;
   --btn-shadow: rgba(255, 255, 255, 0.1);
+  --btn-modern-bg: #2d2d2d;
+  --btn-modern-hover-bg: #383838;
+  --scrollbar-thumb: rgba(255, 255, 255, 0.2);
+  --accent-color: #26c6da;
+  --warning-color: #ff9800;
+  --box-shadow-sm: 0 1px 3px rgba(255, 255, 255, 0.05);
+  --box-shadow-md: 0 3px 6px rgba(255, 255, 255, 0.08);
 }
 
 body { 
@@ -368,13 +388,141 @@ table {
 .output-area {
   flex: 3;
 }
+
+/* V2.0 Sidebar Layout - Modern Grid-Based Controls
+ * Features:
+ * - Card-based semantic grouping with headers (Membership, Assignments, Tools)
+ * - 2-column grid layout for buttons (doubles vertical space efficiency)
+ * - Sticky Target Mode toggle at top
+ * - Scrollable actions area with custom scrollbar
+ * - Icon-first design with accent colors
+ * - Full dark mode support via CSS variables
+ */
+
 .controls-area {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  min-width: 180px;
+  gap: 15px;
+  min-width: var(--controls-area-min-width);
+  height: 100%; /* Ensure it takes full height */
+  overflow: hidden; /* Prevent outer scroll */
 }
+
+/* Card Styling */
+.control-card, .control-group {
+  background: var(--header-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--grid-gap);
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+/* Card Headers */
+.card-header, .group-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-color);
+  opacity: 0.7;
+  margin: 0 0 var(--grid-gap) 0;
+  font-weight: 600;
+}
+
+/* Scroller for the buttons (keeps the toggle sticky at top) */
+.actions-scroller {
+  overflow-y: auto;
+  padding-right: var(--scrollbar-spacing);
+  flex: 1;
+}
+
+/* --- The Action Grid --- */
+.action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr; /* 2 columns */
+  gap: var(--grid-gap);
+}
+
+/* Modern Button Style */
+.btn-modern {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  background-color: var(--btn-modern-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+  border-radius: 6px;
+  padding: 8px 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  height: var(--btn-modern-height);
+  box-shadow: var(--box-shadow-sm);
+}
+
+.btn-modern:hover {
+  background-color: var(--btn-modern-hover-bg);
+  transform: translateY(-1px);
+  box-shadow: var(--box-shadow-md);
+  border-color: var(--accent-color);
+}
+
+/* Disabled state for modern buttons */
+.btn-modern.disabled {
+  opacity: 0.6 !important;
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
+
+.btn-modern.disabled[title] {
+  pointer-events: auto; /* Allow tooltip to show */
+}
+
+.btn-modern.disabled[title]:hover {
+  opacity: 0.6 !important; /* Maintain disabled appearance on hover */
+  transform: none;
+  box-shadow: var(--box-shadow-sm);
+}
+
+/* Icons in buttons */
+.btn-modern i {
+  font-size: 20px;
+  margin-bottom: 4px;
+  color: var(--accent-color);
+}
+
+.btn-modern span {
+  font-size: 0.75rem;
+  line-height: 1.1;
+}
+
+/* Full width modifier for important buttons */
+.full-width {
+  grid-column: span 2;
+  flex-direction: row;
+  height: var(--btn-modern-full-width-height);
+  gap: var(--grid-gap);
+}
+
+.full-width i {
+  margin-bottom: 0;
+}
+
+/* Warning Action Style (e.g. Logs) */
+.warning-action:hover i {
+  color: var(--warning-color);
+}
+
+/* Custom Scrollbar for the button list */
+.actions-scroller::-webkit-scrollbar {
+  width: var(--scrollbar-width);
+}
+.actions-scroller::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
 #configTable table {
   width: 100%;
   margin-top: 20px;
