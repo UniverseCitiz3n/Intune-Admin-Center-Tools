@@ -19,6 +19,8 @@
   --grid-gap: 8px;
   --scrollbar-spacing: 5px;
   --scrollbar-width: 6px;
+  --box-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+  --box-shadow-md: 0 3px 6px rgba(0, 0, 0, 0.1);
 }
 
 [data-theme="dark"] {
@@ -36,6 +38,8 @@
   --scrollbar-thumb: rgba(255, 255, 255, 0.2);
   --accent-color: #26c6da;
   --warning-color: #ff9800;
+  --box-shadow-sm: 0 1px 3px rgba(255, 255, 255, 0.05);
+  --box-shadow-md: 0 3px 6px rgba(255, 255, 255, 0.08);
 }
 
 body { 
@@ -454,14 +458,31 @@ table {
   cursor: pointer;
   transition: all 0.2s ease;
   height: var(--btn-modern-height);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  box-shadow: var(--box-shadow-sm);
 }
 
 .btn-modern:hover {
   background-color: var(--btn-modern-hover-bg);
   transform: translateY(-1px);
-  box-shadow: 0 3px 6px rgba(0,0,0,0.1);
+  box-shadow: var(--box-shadow-md);
   border-color: var(--accent-color);
+}
+
+/* Disabled state for modern buttons */
+.btn-modern.disabled {
+  opacity: 0.6 !important;
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
+
+.btn-modern.disabled[title] {
+  pointer-events: auto; /* Allow tooltip to show */
+}
+
+.btn-modern.disabled[title]:hover {
+  opacity: 0.6 !important; /* Maintain disabled appearance on hover */
+  transform: none;
+  box-shadow: var(--box-shadow-sm);
 }
 
 /* Icons in buttons */
