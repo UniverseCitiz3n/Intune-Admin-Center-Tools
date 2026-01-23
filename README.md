@@ -1,6 +1,7 @@
 # Intune Admin Center Tools
 
-![Version](https://img.shields.io/badge/version-1.4-blue.svg)
+![Version](https://img.shields.io/github/v/release/UniverseCitiz3n/Intune-Admin-Center-Tools?label=version)
+![Publish Status](https://img.shields.io/github/actions/workflow/status/UniverseCitiz3n/Intune-Admin-Center-Tools/publish-edge-addon.yml?label=publish%20to%20store)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 A powerful browser extension that extends Microsoft Intune Admin Center with essential features for IT administrators. Built openly, without marketing fluff or red tape — just practical tools that save time and streamline device management workflows.
