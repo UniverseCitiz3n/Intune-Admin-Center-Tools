@@ -39,7 +39,7 @@ jobs:
       - name: Publish to Microsoft Edge Add-ons
         uses: wdzeng/edge-addon@v2
         with:
-          product-id: iglpbhebeofeaiimjejamnicpfdagnhk
+          product-id: ${{ secrets.EDGE_PRODUCT_GUID }}
           zip-path: extension.zip
           # Microsoft Edge Add-ons API requires both an API key and a client ID
           # These can be generated from the Partner Center
