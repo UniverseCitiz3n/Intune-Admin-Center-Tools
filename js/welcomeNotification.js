@@ -166,13 +166,6 @@ class WelcomeNotification {
         this.dismissModal();
       }
     });
-
-    // ESC key to close
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && document.getElementById('welcomeModal')) {
-        this.closeModal();
-      }
-    });
   }
 
   closeModal() {
