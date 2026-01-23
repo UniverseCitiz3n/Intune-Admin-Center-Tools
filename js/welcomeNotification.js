@@ -170,7 +170,7 @@ class WelcomeNotification {
     // ESC key to close
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && document.getElementById('welcomeModal')) {
-        this.dismissModal();
+        this.closeModal();
       }
     });
   }
