@@ -1,5 +1,7 @@
 name: Publish to Microsoft Edge Add-ons
 
+# This workflow automatically publishes new releases to the Microsoft Edge Add-ons store
+# Triggers only when a new production release is published on GitHub
 on:
   release:
     types: [published]
@@ -36,5 +38,8 @@ jobs:
         with:
           product-id: iglpbhebeofeaiimjejamnicpfdagnhk
           zip-path: extension.zip
+          # Microsoft Edge Add-ons API requires both an API key and a client ID
+          # These can be generated from the Partner Center
+          # See: https://learn.microsoft.com/en-us/microsoft-edge/extensions/publish/api/using-addons-api
           api-key: ${{ secrets.EDGE_PUBLISHING_API_KEY }}
           client-id: ${{ secrets.EDGE_PUBLISHING_CLIENT_ID }}
