@@ -1,0 +1,40 @@
+name: Publish to Microsoft Edge Add-ons
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Create extension package
+        run: |
+          # Create a zip file with all extension files
+          zip -r extension.zip \
+            manifest.json \
+            background.js \
+            content.js \
+            popup.html \
+            popup.js \
+            style.css \
+            extension_icon16.png \
+            extension_icon32.png \
+            extension_icon48.png \
+            extension_icon128.png \
+            js/
+          
+          echo "✅ Extension package created successfully"
+          ls -lh extension.zip
+      
+      - name: Publish to Microsoft Edge Add-ons
+        uses: wdzeng/edge-addon@v2
+        with:
+          product-id: iglpbhebeofeaiimjejamnicpfdagnhk
+          zip-path: extension.zip
+          api-key: ${{ secrets.EDGE_PUBLISHING_API_KEY }}
+          client-id: ${{ secrets.EDGE_PUBLISHING_CLIENT_ID }}
