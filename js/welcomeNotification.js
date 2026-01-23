@@ -155,7 +155,7 @@ class WelcomeNotification {
     const dismissBtn = document.getElementById('dismissWelcome');
 
     // Close button handler
-    closeBtn.addEventListener('click', () => this.closeModal());
+    closeBtn.addEventListener('click', () => this.dismissModal());
     
     // Dismiss button handler
     dismissBtn.addEventListener('click', () => this.dismissModal());
@@ -163,14 +163,14 @@ class WelcomeNotification {
     // Click outside to close
     modal.addEventListener('click', (e) => {
       if (e.target === modal) {
-        this.closeModal();
+        this.dismissModal();
       }
     });
 
     // ESC key to close
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && document.getElementById('welcomeModal')) {
-        this.closeModal();
+        this.dismissModal();
       }
     });
   }
