@@ -2106,11 +2106,22 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById('typedConfirmSection').style.display = 'none';
   };
 
-  // Hide the clear members modal
+  // Hide the clear members modal and reset state
   const hideClearMembersModal = () => {
     const modal = document.getElementById('clearMembersModal');
     modal.style.display = 'none';
+    
+    // Reset modal state
+    clearMembersState.selectedGroupId = null;
+    clearMembersState.selectedGroupName = null;
+    clearMembersState.isGroupDynamic = false;
+    clearMembersState.allMembers = [];
     clearMembersState.actionType = null;
+    clearMembersState.scope = {
+      users: true,
+      devices: true,
+      nestedGroups: false
+    };
   };
 
   // Update member counts in modal
@@ -2168,17 +2179,24 @@ document.addEventListener("DOMContentLoaded", () => {
     // Show confirmation section
     document.getElementById('confirmationSection').style.display = 'block';
     
-    // Update confirmation message
+    // Update confirmation message (escape HTML to prevent XSS)
+    const escapeHtml = (text) => {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    };
+    
+    const escapedGroupName = escapeHtml(clearMembersState.selectedGroupName);
     let count, message;
     if (actionType === 'selected') {
       const selectedMembers = getSelectedMembers();
       count = selectedMembers.length;
-      message = `You are about to remove <strong>${count} selected member${count !== 1 ? 's' : ''}</strong> from the group "${clearMembersState.selectedGroupName}".`;
+      message = `You are about to remove <strong>${count} selected member${count !== 1 ? 's' : ''}</strong> from the group "${escapedGroupName}".`;
       document.getElementById('typedConfirmSection').style.display = 'none';
       document.getElementById('confirmRemovalBtn').disabled = false;
     } else {
       count = clearMembersState.allMembers.length;
-      message = `You are about to remove <strong>ALL ${count} member${count !== 1 ? 's' : ''}</strong> from the group "${clearMembersState.selectedGroupName}". This action cannot be undone.`;
+      message = `You are about to remove <strong>ALL ${count} member${count !== 1 ? 's' : ''}</strong> from the group "${escapedGroupName}". This action cannot be undone.`;
       document.getElementById('typedConfirmSection').style.display = 'block';
       document.getElementById('confirmRemovalBtn').disabled = true;
     }
@@ -2219,11 +2237,17 @@ document.addEventListener("DOMContentLoaded", () => {
       
       // Try batch request first
       try {
-        const batchRequests = batch.map((memberId, index) => ({
-          id: `${i + index}`,
-          method: 'DELETE',
-          url: `/groups/${groupId}/members/${memberId}/$ref`
-        }));
+        // Create a mapping of batch request IDs to member IDs
+        const idMapping = {};
+        const batchRequests = batch.map((memberId, index) => {
+          const requestId = `${i + index}`;
+          idMapping[requestId] = memberId;
+          return {
+            id: requestId,
+            method: 'DELETE',
+            url: `/groups/${groupId}/members/${memberId}/$ref`
+          };
+        });
 
         const batchResponse = await fetchJSON('https://graph.microsoft.com/v1.0/$batch', {
           method: 'POST',
@@ -2241,10 +2265,10 @@ document.addEventListener("DOMContentLoaded", () => {
               results.removed++;
             } else {
               results.failed++;
-              const memberId = batch[parseInt(response.id) - i];
+              const memberId = idMapping[response.id];
               const member = clearMembersState.allMembers.find(m => m.id === memberId);
               results.failures.push({
-                memberId: memberId,
+                memberId: memberId || 'Unknown',
                 memberName: member ? (member.displayName || member.userPrincipalName || 'Unknown') : 'Unknown',
                 reason: response.body?.error?.message || `HTTP ${response.status}`
               });
@@ -2292,7 +2316,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 break;
               }
             } catch (error) {
-              if (retries >= 2) {
+              retries++;
+              if (retries >= 3) {
                 results.failed++;
                 const member = clearMembersState.allMembers.find(m => m.id === memberId);
                 results.failures.push({
@@ -2369,7 +2394,6 @@ document.addEventListener("DOMContentLoaded", () => {
       // If we removed members from the currently displayed table, refresh it
       if (state.currentDisplayType === 'groupMembers') {
         // Refresh the group members display
-        const token = await getToken();
         const { members, totalCount } = await fetchAllGroupMembers(
           clearMembersState.selectedGroupId,
           token
@@ -2414,7 +2438,7 @@ document.addEventListener("DOMContentLoaded", () => {
     
     document.getElementById('resultsSummary').textContent = summaryMsg;
     
-    // Show failure details if any
+    // Show failure details if any (use textContent to prevent XSS)
     const detailsDiv = document.getElementById('resultsDetails');
     detailsDiv.innerHTML = '';
     
@@ -2422,11 +2446,21 @@ document.addEventListener("DOMContentLoaded", () => {
       results.failures.forEach(failure => {
         const failureItem = document.createElement('div');
         failureItem.className = 'failure-item';
-        failureItem.innerHTML = `
-          <strong>${failure.memberName}</strong><br>
-          <small>ID: ${failure.memberId}</small><br>
-          <small>Reason: ${failure.reason}</small>
-        `;
+        
+        const nameStrong = document.createElement('strong');
+        nameStrong.textContent = failure.memberName;
+        failureItem.appendChild(nameStrong);
+        failureItem.appendChild(document.createElement('br'));
+        
+        const idSmall = document.createElement('small');
+        idSmall.textContent = `ID: ${failure.memberId}`;
+        failureItem.appendChild(idSmall);
+        failureItem.appendChild(document.createElement('br'));
+        
+        const reasonSmall = document.createElement('small');
+        reasonSmall.textContent = `Reason: ${failure.reason}`;
+        failureItem.appendChild(reasonSmall);
+        
         detailsDiv.appendChild(failureItem);
       });
     }
@@ -4046,6 +4080,23 @@ document.addEventListener("DOMContentLoaded", () => {
     clearMembersState.actionType = null;
   });
   document.getElementById("closeResultsBtn").addEventListener("click", hideClearMembersModal);
+  
+  // Close modal on Escape key
+  document.addEventListener("keydown", (e) => {
+    if (e.key === 'Escape') {
+      const modal = document.getElementById('clearMembersModal');
+      if (modal && modal.style.display === 'flex') {
+        hideClearMembersModal();
+      }
+    }
+  });
+  
+  // Close modal when clicking outside the dialog
+  document.getElementById('clearMembersModal').addEventListener('click', (e) => {
+    if (e.target.id === 'clearMembersModal') {
+      hideClearMembersModal();
+    }
+  });
   
   document.getElementById("groupResults").addEventListener("change", (event) => {
     if (event.target.type === "checkbox") {
