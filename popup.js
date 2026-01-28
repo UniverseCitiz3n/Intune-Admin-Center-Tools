@@ -1044,6 +1044,9 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.removeAttribute('title');
       }
     });
+    
+    // Update Clear Members button state
+    updateClearMembersButtonState();
   };
 
   const getSelectedGroupNames = () => {
@@ -2062,6 +2065,502 @@ document.addEventListener("DOMContentLoaded", () => {
       showResultNotification(errorMessage, 'error');
     }
   };
+
+  // ══════════════════════════════════════════════════════════════
+  // Clear Group Members Feature
+  // ══════════════════════════════════════════════════════════════
+
+  // State for clear members modal
+  const clearMembersState = {
+    selectedGroupId: null,
+    selectedGroupName: null,
+    isGroupDynamic: false,
+    allMembers: [],
+    actionType: null, // 'selected' or 'all'
+    scope: {
+      users: true,
+      devices: true,
+      nestedGroups: false
+    }
+  };
+
+  // Show the clear members modal
+  const showClearMembersModal = () => {
+    const modal = document.getElementById('clearMembersModal');
+    modal.style.display = 'flex';
+    
+    // Reset modal state
+    document.getElementById('confirmationSection').style.display = 'none';
+    document.getElementById('progressSection').style.display = 'none';
+    document.getElementById('resultsSection').style.display = 'none';
+    document.querySelector('.clear-action-buttons').style.display = 'flex';
+    document.querySelector('.modal-description').style.display = 'block';
+    
+    // Reset scope checkboxes
+    document.getElementById('scopeUsers').checked = true;
+    document.getElementById('scopeDevices').checked = true;
+    document.getElementById('scopeNestedGroups').checked = false;
+    
+    // Reset typed confirm input
+    document.getElementById('typedConfirmInput').value = '';
+    document.getElementById('typedConfirmSection').style.display = 'none';
+  };
+
+  // Hide the clear members modal and reset state
+  const hideClearMembersModal = () => {
+    const modal = document.getElementById('clearMembersModal');
+    modal.style.display = 'none';
+    
+    // Reset modal state
+    clearMembersState.selectedGroupId = null;
+    clearMembersState.selectedGroupName = null;
+    clearMembersState.isGroupDynamic = false;
+    clearMembersState.allMembers = [];
+    clearMembersState.actionType = null;
+    clearMembersState.scope = {
+      users: true,
+      devices: true,
+      nestedGroups: false
+    };
+  };
+
+  // Update member counts in modal
+  const updateMemberCounts = (selectedCount, totalCount) => {
+    const selectedBtn = document.getElementById('clearSelectedMembersBtn');
+    const allBtn = document.getElementById('clearAllMembersBtn');
+    
+    if (selectedCount > 0) {
+      selectedBtn.disabled = false;
+      document.getElementById('selectedMembersCount').textContent = 
+        `${selectedCount} member${selectedCount !== 1 ? 's' : ''} selected`;
+    } else {
+      selectedBtn.disabled = true;
+      document.getElementById('selectedMembersCount').textContent = 'No rows selected';
+    }
+    
+    document.getElementById('allMembersCount').textContent = 
+      `${totalCount} total member${totalCount !== 1 ? 's' : ''}`;
+  };
+
+  // Get selected members from table
+  const getSelectedMembers = () => {
+    const selectedIds = Array.from(state.pagination.selectedRowIds);
+    return clearMembersState.allMembers.filter(member => 
+      selectedIds.includes(member.id)
+    );
+  };
+
+  // Filter members by scope
+  const filterMembersByScope = (members) => {
+    return members.filter(member => {
+      const odataType = member['@odata.type'] || '';
+      
+      if (odataType.includes('#microsoft.graph.user')) {
+        return clearMembersState.scope.users;
+      } else if (odataType.includes('#microsoft.graph.device')) {
+        return clearMembersState.scope.devices;
+      } else if (odataType.includes('#microsoft.graph.group')) {
+        return clearMembersState.scope.nestedGroups;
+      }
+      
+      // Default: include if type is unknown and users are enabled
+      return clearMembersState.scope.users;
+    });
+  };
+
+  // Show confirmation section
+  const showConfirmationSection = (actionType) => {
+    clearMembersState.actionType = actionType;
+    
+    // Hide action buttons
+    document.querySelector('.clear-action-buttons').style.display = 'none';
+    document.querySelector('.modal-description').style.display = 'none';
+    
+    // Show confirmation section
+    document.getElementById('confirmationSection').style.display = 'block';
+    
+    // Update confirmation message (escape HTML to prevent XSS)
+    const escapeHtml = (text) => {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    };
+    
+    const escapedGroupName = escapeHtml(clearMembersState.selectedGroupName);
+    let count, message;
+    if (actionType === 'selected') {
+      const selectedMembers = getSelectedMembers();
+      count = selectedMembers.length;
+      message = `You are about to remove <strong>${count} selected member${count !== 1 ? 's' : ''}</strong> from the group "${escapedGroupName}".`;
+      document.getElementById('typedConfirmSection').style.display = 'none';
+      document.getElementById('confirmRemovalBtn').disabled = false;
+    } else {
+      count = clearMembersState.allMembers.length;
+      message = `You are about to remove <strong>ALL ${count} member${count !== 1 ? 's' : ''}</strong> from the group "${escapedGroupName}". This action cannot be undone.`;
+      document.getElementById('typedConfirmSection').style.display = 'block';
+      document.getElementById('confirmRemovalBtn').disabled = true;
+    }
+    
+    document.getElementById('confirmationMessage').innerHTML = message;
+  };
+
+  // Validate typed confirmation
+  const validateTypedConfirmation = () => {
+    if (clearMembersState.actionType !== 'all') {
+      return true;
+    }
+    
+    const input = document.getElementById('typedConfirmInput').value;
+    return input === 'REMOVE ALL';
+  };
+
+  // Remove members from group using Graph API
+  const removeMembersFromGroup = async (groupId, memberIds, token) => {
+    const results = {
+      total: memberIds.length,
+      removed: 0,
+      failed: 0,
+      failures: []
+    };
+
+    // Process in batches of 20 (Graph API batch limit)
+    const batchSize = 20;
+    
+    for (let i = 0; i < memberIds.length; i += batchSize) {
+      const batch = memberIds.slice(i, i + batchSize);
+      
+      // Update progress
+      const progress = Math.min(100, Math.round((i / memberIds.length) * 100));
+      document.getElementById('progressBar').style.width = `${progress}%`;
+      document.getElementById('progressDetails').textContent = 
+        `Processing ${Math.min(i + batchSize, memberIds.length)} of ${memberIds.length}...`;
+      
+      // Try batch request first
+      try {
+        // Create a mapping of batch request IDs to member IDs
+        const idMapping = {};
+        const batchRequests = batch.map((memberId, index) => {
+          const requestId = `${i + index}`;
+          idMapping[requestId] = memberId;
+          return {
+            id: requestId,
+            method: 'DELETE',
+            url: `/groups/${groupId}/members/${memberId}/$ref`
+          };
+        });
+
+        const batchResponse = await fetchJSON('https://graph.microsoft.com/v1.0/$batch', {
+          method: 'POST',
+          headers: {
+            'Authorization': token,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ requests: batchRequests })
+        });
+
+        // Process batch responses
+        if (batchResponse.responses) {
+          for (const response of batchResponse.responses) {
+            if (response.status === 204 || response.status === 200) {
+              results.removed++;
+            } else {
+              results.failed++;
+              const memberId = idMapping[response.id];
+              const member = clearMembersState.allMembers.find(m => m.id === memberId);
+              results.failures.push({
+                memberId: memberId || 'Unknown',
+                memberName: member ? (member.displayName || member.userPrincipalName || 'Unknown') : 'Unknown',
+                reason: response.body?.error?.message || `HTTP ${response.status}`
+              });
+            }
+          }
+        }
+      } catch (batchError) {
+        logMessage(`Batch removal failed, falling back to individual requests: ${batchError.message}`);
+        
+        // Fallback: individual DELETE requests with retry logic
+        for (const memberId of batch) {
+          let retries = 0;
+          let success = false;
+          
+          while (retries < 3 && !success) {
+            try {
+              const deleteUrl = `https://graph.microsoft.com/v1.0/groups/${groupId}/members/${memberId}/$ref`;
+              const response = await fetch(deleteUrl, {
+                method: 'DELETE',
+                headers: {
+                  'Authorization': token,
+                  'Content-Type': 'application/json'
+                }
+              });
+
+              if (response.status === 204 || response.status === 200) {
+                results.removed++;
+                success = true;
+              } else if (response.status === 429 || response.status === 503) {
+                // Throttling - wait and retry
+                const retryAfter = parseInt(response.headers.get('Retry-After')) || (retries + 1) * 2;
+                logMessage(`Throttled (${response.status}), waiting ${retryAfter}s before retry ${retries + 1}/3`);
+                await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+                retries++;
+              } else {
+                // Other error
+                results.failed++;
+                const errorBody = await response.json().catch(() => ({}));
+                const member = clearMembersState.allMembers.find(m => m.id === memberId);
+                results.failures.push({
+                  memberId: memberId,
+                  memberName: member ? (member.displayName || member.userPrincipalName || 'Unknown') : 'Unknown',
+                  reason: errorBody?.error?.message || `HTTP ${response.status}`
+                });
+                break;
+              }
+            } catch (error) {
+              retries++;
+              if (retries >= 3) {
+                results.failed++;
+                const member = clearMembersState.allMembers.find(m => m.id === memberId);
+                results.failures.push({
+                  memberId: memberId,
+                  memberName: member ? (member.displayName || member.userPrincipalName || 'Unknown') : 'Unknown',
+                  reason: error.message
+                });
+                break;
+              }
+              retries++;
+              await new Promise(resolve => setTimeout(resolve, retries * 1000));
+            }
+          }
+        }
+      }
+    }
+
+    // Final progress update
+    document.getElementById('progressBar').style.width = '100%';
+    
+    return results;
+  };
+
+  // Execute the removal
+  const executeRemoval = async () => {
+    // Hide confirmation, show progress
+    document.getElementById('confirmationSection').style.display = 'none';
+    document.getElementById('progressSection').style.display = 'block';
+    
+    // Update scope from checkboxes
+    clearMembersState.scope.users = document.getElementById('scopeUsers').checked;
+    clearMembersState.scope.devices = document.getElementById('scopeDevices').checked;
+    clearMembersState.scope.nestedGroups = document.getElementById('scopeNestedGroups').checked;
+    
+    // Get members to remove
+    let membersToRemove;
+    if (clearMembersState.actionType === 'selected') {
+      membersToRemove = getSelectedMembers();
+    } else {
+      membersToRemove = clearMembersState.allMembers;
+    }
+    
+    // Filter by scope
+    membersToRemove = filterMembersByScope(membersToRemove);
+    
+    if (membersToRemove.length === 0) {
+      showResultsSection({
+        total: 0,
+        removed: 0,
+        failed: 0,
+        failures: []
+      });
+      return;
+    }
+    
+    // Get member IDs
+    const memberIds = membersToRemove.map(m => m.id);
+    
+    document.getElementById('progressMessage').textContent = 
+      `Removing ${memberIds.length} member${memberIds.length !== 1 ? 's' : ''}...`;
+    document.getElementById('progressBar').style.width = '0%';
+    document.getElementById('progressDetails').textContent = 'Initializing...';
+    
+    try {
+      const token = await getToken();
+      const results = await removeMembersFromGroup(
+        clearMembersState.selectedGroupId,
+        memberIds,
+        token
+      );
+      
+      showResultsSection(results);
+      
+      // If we removed members from the currently displayed table, refresh it
+      if (state.currentDisplayType === 'groupMembers') {
+        // Refresh the group members display
+        const { members, totalCount } = await fetchAllGroupMembers(
+          clearMembersState.selectedGroupId,
+          token
+        );
+        chrome.storage.local.set({ lastGroupMembers: members });
+        updateGroupMembersTable(members);
+        
+        // Update display text
+        const displayText = `- ${clearMembersState.selectedGroupName} (${totalCount} members)`;
+        document.getElementById('deviceNameDisplay').textContent = displayText;
+      }
+      
+    } catch (error) {
+      logMessage(`Error during removal: ${error.message}`);
+      showResultsSection({
+        total: memberIds.length,
+        removed: 0,
+        failed: memberIds.length,
+        failures: [{
+          memberId: 'N/A',
+          memberName: 'N/A',
+          reason: error.message
+        }]
+      });
+    }
+  };
+
+  // Show results section
+  const showResultsSection = (results) => {
+    document.getElementById('progressSection').style.display = 'none';
+    document.getElementById('resultsSection').style.display = 'block';
+    
+    // Build summary message
+    let summaryMsg = '';
+    if (results.removed === results.total) {
+      summaryMsg = `✓ Successfully removed all ${results.removed} member${results.removed !== 1 ? 's' : ''}.`;
+    } else if (results.removed > 0) {
+      summaryMsg = `⚠ Partially completed: ${results.removed} removed, ${results.failed} failed.`;
+    } else {
+      summaryMsg = `✗ Failed to remove members.`;
+    }
+    
+    document.getElementById('resultsSummary').textContent = summaryMsg;
+    
+    // Show failure details if any (use textContent to prevent XSS)
+    const detailsDiv = document.getElementById('resultsDetails');
+    detailsDiv.innerHTML = '';
+    
+    if (results.failures && results.failures.length > 0) {
+      results.failures.forEach(failure => {
+        const failureItem = document.createElement('div');
+        failureItem.className = 'failure-item';
+        
+        const nameStrong = document.createElement('strong');
+        nameStrong.textContent = failure.memberName;
+        failureItem.appendChild(nameStrong);
+        failureItem.appendChild(document.createElement('br'));
+        
+        const idSmall = document.createElement('small');
+        idSmall.textContent = `ID: ${failure.memberId}`;
+        failureItem.appendChild(idSmall);
+        failureItem.appendChild(document.createElement('br'));
+        
+        const reasonSmall = document.createElement('small');
+        reasonSmall.textContent = `Reason: ${failure.reason}`;
+        failureItem.appendChild(reasonSmall);
+        
+        detailsDiv.appendChild(failureItem);
+      });
+    }
+  };
+
+  // Handle Clear Group Members button click
+  const handleClearGroupMembers = async () => {
+    logMessage("clearGroupMembers clicked");
+    
+    const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
+    if (selected.length !== 1) {
+      showResultNotification('Select exactly one group to clear members.', 'error');
+      return;
+    }
+
+    const groupId = selected[0].value;
+    const groupName = selected[0].dataset.groupName;
+    
+    // Check if group is dynamic
+    if (isDynamicGroup(groupId)) {
+      showResultNotification(
+        'Cannot clear members from dynamic groups. Dynamic membership is managed by Azure AD rules.',
+        'error'
+      );
+      return;
+    }
+
+    logMessage(`clearGroupMembers: Selected group - ID: ${groupId}, Name: ${groupName}`);
+
+    try {
+      const token = await getToken();
+      
+      // Fetch current group members
+      showProcessingNotification(`Loading members for group "${groupName}"...`);
+      
+      const { members, totalCount } = await fetchAllGroupMembers(groupId, token);
+      
+      if (totalCount === 0) {
+        showResultNotification(`Group "${groupName}" has no members to clear.`, 'info');
+        return;
+      }
+      
+      // Store in state
+      clearMembersState.selectedGroupId = groupId;
+      clearMembersState.selectedGroupName = groupName;
+      clearMembersState.isGroupDynamic = false;
+      clearMembersState.allMembers = members;
+      
+      // Show modal
+      document.getElementById('clearMembersGroupName').textContent = 
+        `Group: ${groupName}`;
+      
+      // Update counts
+      const selectedMembers = getSelectedMembers();
+      updateMemberCounts(selectedMembers.length, totalCount);
+      
+      showClearMembersModal();
+      
+      // Hide processing notification
+      showResultNotification('', 'clear');
+      
+    } catch (error) {
+      logMessage(`clearGroupMembers: Error - ${error.message}`);
+      
+      let errorMessage = 'Failed to load group members: ' + error.message;
+      
+      if (error.message.includes('403') || error.message.includes('Forbidden')) {
+        errorMessage = `Access denied. You don't have permission to view or modify members of group "${groupName}".`;
+      } else if (error.message.includes('404') || error.message.includes('Not Found')) {
+        errorMessage = `Group "${groupName}" was not found or has been deleted.`;
+      }
+      
+      showResultNotification(errorMessage, 'error');
+    }
+  };
+
+  // Update the button state based on selected group type
+  const updateClearMembersButtonState = () => {
+    const clearBtn = document.getElementById('clearGroupMembers');
+    const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
+    
+    if (selected.length !== 1) {
+      clearBtn.classList.remove('disabled');
+      clearBtn.title = '';
+      return;
+    }
+    
+    const groupId = selected[0].value;
+    if (isDynamicGroup(groupId)) {
+      clearBtn.classList.add('disabled');
+      clearBtn.title = 'Only available for Assigned groups. Dynamic membership cannot be manually cleared.';
+    } else {
+      clearBtn.classList.remove('disabled');
+      clearBtn.title = '';
+    }
+  };
+
+  // ══════════════════════════════════════════════════════════════
+  // End of Clear Group Members Feature
+  // ══════════════════════════════════════════════════════════════
 
   // Handle Checking Group Assignments in Configurations
   const handleCheckGroupAssignments = async () => {
@@ -3547,13 +4046,59 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("removeFromGroups").addEventListener("click", handleRemoveFromGroups);
   document.getElementById("checkGroups").addEventListener("click", handleCheckGroups);
   document.getElementById("checkGroupMembers").addEventListener("click", handleCheckGroupMembers);
+  document.getElementById("clearGroupMembers").addEventListener("click", handleClearGroupMembers);
   document.getElementById("checkGroupAssignments").addEventListener("click", handleCheckGroupAssignments);
   document.getElementById("checkCompliance").addEventListener("click", handleCheckCompliance);
   document.getElementById("downloadScript").addEventListener("click", handleDownloadScript);
   document.getElementById("appsAssignment").addEventListener("click", handleAppsAssignment);
   document.getElementById("pwshProfiles").addEventListener("click", handlePwshProfiles);
   document.getElementById("collectLogs").addEventListener("click", handleCollectLogs);
-  document.getElementById("createGroup").addEventListener("click", handleCreateGroup); document.getElementById("groupResults").addEventListener("change", (event) => {
+  document.getElementById("createGroup").addEventListener("click", handleCreateGroup);
+  
+  // Clear Members Modal Event Listeners
+  document.getElementById("clearMembersModalClose").addEventListener("click", hideClearMembersModal);
+  document.getElementById("clearSelectedMembersBtn").addEventListener("click", () => {
+    showConfirmationSection('selected');
+  });
+  document.getElementById("clearAllMembersBtn").addEventListener("click", () => {
+    showConfirmationSection('all');
+  });
+  document.getElementById("typedConfirmInput").addEventListener("input", (e) => {
+    const isValid = e.target.value === 'REMOVE ALL';
+    document.getElementById("confirmRemovalBtn").disabled = !isValid;
+  });
+  document.getElementById("confirmRemovalBtn").addEventListener("click", async () => {
+    if (validateTypedConfirmation()) {
+      await executeRemoval();
+    }
+  });
+  document.getElementById("cancelRemovalBtn").addEventListener("click", () => {
+    // Go back to action selection
+    document.getElementById('confirmationSection').style.display = 'none';
+    document.querySelector('.clear-action-buttons').style.display = 'flex';
+    document.querySelector('.modal-description').style.display = 'block';
+    clearMembersState.actionType = null;
+  });
+  document.getElementById("closeResultsBtn").addEventListener("click", hideClearMembersModal);
+  
+  // Close modal on Escape key
+  document.addEventListener("keydown", (e) => {
+    if (e.key === 'Escape') {
+      const modal = document.getElementById('clearMembersModal');
+      if (modal && modal.style.display === 'flex') {
+        hideClearMembersModal();
+      }
+    }
+  });
+  
+  // Close modal when clicking outside the dialog
+  document.getElementById('clearMembersModal').addEventListener('click', (e) => {
+    if (e.target.id === 'clearMembersModal') {
+      hideClearMembersModal();
+    }
+  });
+  
+  document.getElementById("groupResults").addEventListener("change", (event) => {
     if (event.target.type === "checkbox") {
       // Clear table selections when selecting checkboxes
       clearTableSelection();
