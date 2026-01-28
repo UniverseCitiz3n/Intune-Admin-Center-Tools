@@ -131,9 +131,13 @@
                 <i class="material-icons">group_remove</i>
                 <span id="removeBtnText">Remove</span>
               </a>
-              <a id="checkGroupMembers" class="btn-modern full-width" role="button">
+              <a id="checkGroupMembers" class="btn-modern" role="button">
                 <i class="material-icons">people_outline</i>
                 <span>Check Members</span>
+              </a>
+              <a id="clearGroupMembers" class="btn-modern" role="button" title="">
+                <i class="material-icons">clear_all</i>
+                <span>Clear Members</span>
               </a>
             </div>
           </div>
@@ -182,6 +186,103 @@
       </div>
     </div>
   </div>
+
+  <!-- Clear Members Modal Dialog -->
+  <div id="clearMembersModal" class="modal-overlay" style="display: none;">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h6>Clear Group Members</h6>
+        <button class="modal-close" id="clearMembersModalClose">
+          <i class="material-icons">close</i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p id="clearMembersGroupName" class="modal-group-name"></p>
+        <p class="modal-description">Choose which members to remove:</p>
+        
+        <div class="clear-action-buttons">
+          <button id="clearSelectedMembersBtn" class="action-choice-btn" disabled>
+            <i class="material-icons">playlist_remove</i>
+            <span class="action-btn-text">
+              <strong>Remove selected</strong>
+              <span id="selectedMembersCount" class="action-count">No rows selected</span>
+            </span>
+          </button>
+          
+          <button id="clearAllMembersBtn" class="action-choice-btn">
+            <i class="material-icons">delete_sweep</i>
+            <span class="action-btn-text">
+              <strong>Remove all members</strong>
+              <span id="allMembersCount" class="action-count">Loading...</span>
+            </span>
+          </button>
+        </div>
+
+        <!-- Confirmation section (shown after action selection) -->
+        <div id="confirmationSection" style="display: none;">
+          <div class="confirmation-divider"></div>
+          
+          <p class="confirmation-title">
+            <i class="material-icons warning-icon">warning</i>
+            Confirm removal
+          </p>
+          
+          <p id="confirmationMessage" class="confirmation-message"></p>
+          
+          <!-- Scope selection checkboxes -->
+          <div class="scope-selection">
+            <label class="scope-label">
+              <input type="checkbox" id="scopeUsers" checked>
+              <span>Users</span>
+            </label>
+            <label class="scope-label">
+              <input type="checkbox" id="scopeDevices" checked>
+              <span>Devices</span>
+            </label>
+            <label class="scope-label">
+              <input type="checkbox" id="scopeNestedGroups">
+              <span>Nested groups</span>
+            </label>
+          </div>
+          
+          <!-- Typed confirmation for Remove All -->
+          <div id="typedConfirmSection" style="display: none;">
+            <p class="typed-confirm-instruction">Type <strong>REMOVE ALL</strong> to confirm:</p>
+            <input type="text" id="typedConfirmInput" class="typed-confirm-input" placeholder="REMOVE ALL">
+          </div>
+          
+          <div class="modal-actions">
+            <button id="confirmRemovalBtn" class="btn-confirm" disabled>
+              <i class="material-icons">delete_forever</i>
+              Confirm Removal
+            </button>
+            <button id="cancelRemovalBtn" class="btn-cancel">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Progress section -->
+        <div id="progressSection" style="display: none;">
+          <div class="progress-info">
+            <p id="progressMessage">Removing members...</p>
+            <div class="progress-bar-container">
+              <div id="progressBar" class="progress-bar"></div>
+            </div>
+            <p id="progressDetails" class="progress-details"></p>
+          </div>
+        </div>
+
+        <!-- Results section -->
+        <div id="resultsSection" style="display: none;">
+          <div class="results-summary">
+            <p id="resultsSummary" class="results-title"></p>
+            <div id="resultsDetails" class="results-details"></div>
+            <button id="closeResultsBtn" class="btn-close-results">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="js/parseJSON.js"></script>
   <script src="js/logMessage.js"></script>
   <script src="js/showNotification.js"></script>
