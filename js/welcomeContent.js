@@ -6,92 +6,48 @@
  */
 
 const WELCOME_CONTENT = {
-  // Version 1.3 
-  '1.3': {
-    title: 'Welcome to Intune Admin Center Tools v1.3!',
-    intro: `Thank you for using Intune Admin Center Tools! This extension helps you efficiently manage Intune devices, check assignments, and handle group memberships directly from the Intune Admin Center.`,
+  // Version 1.5.0 - Latest Release
+  '1.5.0': {
+    title: 'Welcome to Intune Admin Center Tools v1.5.0!',
+    intro: `This major release introduces powerful group member management capabilities and enhanced information display for better administration.`,
     changelog: [
-      'NEW: Check group members functionality',
-      'Improved user/device targeting',
-      'Enhanced group management tools',
-      'Better pagination and filtering',
-      'Various bug fixes and performance improvements'
+      'NEW: Clear Members - Remove members from groups (selected or all)',
+      'NEW: Enhanced Check Members with exact counts for large groups (1000+)',
+      'NEW: Group type indicator (Assigned/Dynamic)',
+      'NEW: Dynamic membership rule display in collapsible section',
+      'NEW: Row selection support in group members table',
+      'IMPROVED: Validation errors now show as auto-dismissing tooltip bubbles',
+      'IMPROVED: Better user experience with more informative displays'
     ],
     features: [
       'Search and manage Azure AD groups',
       'Check device/user configuration assignments',
       'Manage group memberships (add/remove devices and users)',
+      'Clear group members (NEW) - Remove selected or all members',
+      'Check group members with enhanced details (NEW)',
+      'View exact member counts for large groups (NEW)',
+      'See group type and dynamic rules (NEW)',
       'Check compliance policy assignments',
       'View app assignments',
+      'Check group assignments',
+      'Export output tables to CSV',
       'Dark/Light theme support',
       'Download PowerShell scripts for automation'
     ],
     tips: [
       'Use Ctrl+Shift+W to show this welcome message anytime',
-      'The extension works on Intune device pages',
-      'Switch between Device and User modes using the toggle buttons',
-      'Filter results using the search boxes for better navigation'
-    ]
-  },
-
-  // Version 1.4 - New features
-  '1.4': {
-    title: 'Welcome to Intune Admin Center Tools v1.4!',
-    intro: `This release adds a streamlined way to review configuration assignments for your groups, along with UX improvements.`,
-    changelog: [
-      'NEW: Check group assignments feature',
-      'NEW: Export table data to CSV',
-      'UI: Freshened user interface for better usability',
-    ],
-    features: [
-      'Search and manage Azure AD groups',
-      'Check device/user configuration assignments',
-      'Manage group memberships (add/remove devices and users)',
-      'Check compliance policy assignments',
-      'View app assignments',
-      'Dark/Light theme support',
-      'Download PowerShell scripts for automation',
-      'Check group assignments',
-      'Export output tables to CSV (new)'
-    ],
-    tips: [
-      'Use Ctrl+Shift+W to show this welcome message anytime',
       'The extension works on any Intune Admin Center page',
       'Switch between Device and User modes using the toggle buttons',
-      'Filter results using the search boxes for better navigation',
-      'Click the download icon in the pagination area to export the table to CSV'
-    ]
-  },
-    '1.4.1': {
-    title: 'Welcome to Intune Admin Center Tools v1.4.1!',
-    intro: `This release adds a streamlined way to review configuration assignments for your groups, along with UX improvements.`,
-    changelog: [
-      'UI: Welcome Guide closing behavior improved',
-      'v1.4 features:',
-      '  - NEW: Check group assignments feature',
-      '  - NEW: Export table data to CSV',
-      '  - UI: Freshened user interface for better usability'
-    ],
-    features: [
-      'Search and manage Azure AD groups',
-      'Check device/user configuration assignments',
-      'Manage group memberships (add/remove devices and users)',
-      'Check compliance policy assignments',
-      'View app assignments',
-      'Dark/Light theme support',
-      'Download PowerShell scripts for automation',
-      'Check group assignments',
-      'Export output tables to CSV (new)'
-    ],
-    tips: [
-      'Use Ctrl+Shift+W to show this welcome message anytime',
-      'The extension works on any Intune Admin Center page',
-      'Switch between Device and User modes using the toggle buttons',
+      'Click on rows in the group members table to select specific members',
+      'Use the "Clear Members" button to remove members from assigned groups',
+      'For dynamic groups, expand the membership rule to see the query',
       'Filter results using the search boxes for better navigation',
       'Click the download icon in the pagination area to export the table to CSV'
     ]
   },
 
+  // Previous versions are hidden to keep welcome message focused on latest features
+  
   // Default fallback content
   'default': {
     title: 'Welcome to Intune Admin Center Tools!',
