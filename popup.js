@@ -368,8 +368,8 @@ document.addEventListener("DOMContentLoaded", () => {
     csvContent = headers.map(escapeCsvValue).join(',') + '\n';
     csvContent += rows.map(row => row.map(escapeCsvValue).join(',')).join('\n');
 
-    // Create and download file
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    // Create and download file with UTF-8 BOM for proper special character handling
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
