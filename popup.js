@@ -4057,33 +4057,212 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
+  // ── Collect Logs Modal Functions ───────────────────────────────────────
+  
+  // Supported environment variables for log paths
+  const SUPPORTED_VARIABLES = [
+    '%PROGRAMFILES%',
+    '%PROGRAMDATA%',
+    '%PUBLIC%',
+    '%WINDIR%',
+    '%TEMP%',
+    '%TMP%'
+  ];
+
+  // Custom paths storage
+  let customLogPaths = [];
+
+  // Validate path starts with supported variable
+  const validateLogPath = (path) => {
+    const trimmedPath = path.trim();
+    if (!trimmedPath) {
+      return { valid: false, message: 'Path cannot be empty.' };
+    }
+
+    const upperPath = trimmedPath.toUpperCase();
+    const hasValidVariable = SUPPORTED_VARIABLES.some(varName => 
+      upperPath.startsWith(varName)
+    );
+
+    if (!hasValidVariable) {
+      return { 
+        valid: false, 
+        message: `Path must start with one of: ${SUPPORTED_VARIABLES.join(', ')}` 
+      };
+    }
+
+    return { valid: true };
+  };
+
+  // Show Collect Logs modal
+  const showCollectLogsModal = () => {
+    // Reset form
+    document.getElementById('collectLogsAppId').value = '';
+    document.getElementById('logPathPSADT').checked = false;
+    document.getElementById('logPathIME').checked = true;
+    customLogPaths = [];
+    renderCustomPaths();
+    clearInputError('customPathInput');
+    clearInputError('collectLogsAppId');
+
+    // Show modal
+    document.getElementById('collectLogsModal').style.display = 'flex';
+  };
+
+  // Hide Collect Logs modal
+  const hideCollectLogsModal = () => {
+    document.getElementById('collectLogsModal').style.display = 'none';
+  };
+
+  // Add custom path to list
+  const addCustomPath = () => {
+    const input = document.getElementById('customPathInput');
+    const path = input.value.trim();
+
+    if (!path) return;
+
+    const validation = validateLogPath(path);
+    if (!validation.valid) {
+      showInputError('customPathInput', validation.message);
+      return;
+    }
+
+    // Check for duplicates
+    if (customLogPaths.includes(path)) {
+      showInputError('customPathInput', 'This path is already added.');
+      return;
+    }
+
+    customLogPaths.push(path);
+    input.value = '';
+    clearInputError('customPathInput');
+    renderCustomPaths();
+  };
+
+  // Remove custom path from list
+  const removeCustomPath = (index) => {
+    customLogPaths.splice(index, 1);
+    renderCustomPaths();
+  };
+
+  // Render custom paths list
+  const renderCustomPaths = () => {
+    const container = document.getElementById('customPathsList');
+    container.innerHTML = '';
+
+    customLogPaths.forEach((path, index) => {
+      const item = document.createElement('div');
+      item.className = 'custom-path-item';
+      
+      const text = document.createElement('span');
+      text.className = 'custom-path-text';
+      text.textContent = path;
+      
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'btn-remove-path';
+      removeBtn.innerHTML = '<i class="material-icons">delete</i>';
+      removeBtn.onclick = () => removeCustomPath(index);
+      
+      item.appendChild(text);
+      item.appendChild(removeBtn);
+      container.appendChild(item);
+    });
+  };
+
+  // Show input error as tooltip bubble with auto-dismiss
+  const showInputError = (inputId, message) => {
+    const input = document.getElementById(inputId);
+    input.classList.add('error');
+    
+    // Remove existing error tooltip if any
+    const existingError = input.parentElement.querySelector('.collect-logs-error-tooltip');
+    if (existingError) {
+      existingError.remove();
+    }
+    
+    // Add error tooltip
+    const errorTooltip = document.createElement('div');
+    errorTooltip.className = 'collect-logs-error-tooltip';
+    errorTooltip.innerHTML = `<i class="material-icons">error</i><span>${message}</span>`;
+    input.parentElement.appendChild(errorTooltip);
+    
+    // Auto-dismiss after 4 seconds
+    setTimeout(() => {
+      errorTooltip.classList.add('fade-out');
+      setTimeout(() => {
+        errorTooltip.remove();
+        input.classList.remove('error');
+      }, 300); // Wait for fade-out animation to complete
+    }, 4000);
+  };
+
+  // Clear input error
+  const clearInputError = (inputId) => {
+    const input = document.getElementById(inputId);
+    input.classList.remove('error');
+    
+    const errorTooltip = input.parentElement.querySelector('.collect-logs-error-tooltip');
+    if (errorTooltip) {
+      errorTooltip.remove();
+    }
+  };
+
+  // Gather all selected log paths and convert to semicolon-delimited format
+  const gatherLogPaths = () => {
+    const paths = [];
+
+    // Get predefined paths
+    const psadtCheckbox = document.getElementById('logPathPSADT');
+    if (psadtCheckbox.checked) {
+      paths.push(psadtCheckbox.getAttribute('data-path'));
+    }
+
+    const imeCheckbox = document.getElementById('logPathIME');
+    if (imeCheckbox.checked) {
+      paths.push(imeCheckbox.getAttribute('data-path'));
+    }
+
+    // Add custom paths
+    paths.push(...customLogPaths);
+
+    return paths;
+  };
+
   // Handle Collecting Log Files
-  const handleCollectLogs = async () => {
+  const handleCollectLogs = () => {
     logMessage("collectLogs clicked");
+    showCollectLogsModal();
+  };
 
-    // Prompt user for log paths and AppID
-    const logPathsPrompt = "Enter log paths (supported folders: %PROGRAMFILES%, %PROGRAMDATA%, %PUBLIC%, %WINDIR%, %TEMP%, %TMP%). Delimit paths with semicolons (;)";
+  // Confirm and execute log collection
+  const confirmCollectLogs = async () => {
+    logMessage("confirmCollectLogs clicked");
 
-    const logPaths = prompt(logPathsPrompt, "%PROGRAMDATA%\\Microsoft\\IntuneManagementExtension\\Logs\\IntuneManagementExtension.log");
-
-    if (!logPaths) {
-      logMessage("collectLogs: No log paths entered");
-      showResultNotification("Log collection canceled.", "info");
-      return;
-    }
-
-    const appIdPrompt = "Enter Intune Win32 application ID to initialize log collection (recommend using a dummy app ID)";
-    const appId = prompt(appIdPrompt, "");
-
+    // Validate app ID
+    const appId = document.getElementById('collectLogsAppId').value.trim();
     if (!appId) {
-      logMessage("collectLogs: No AppID entered");
-      showResultNotification("AppID is required for log collection.", "error");
+      showInputError('collectLogsAppId', 'Application ID is required.');
       return;
     }
+    clearInputError('collectLogsAppId');
+
+    // Gather log paths
+    const logPathsArray = gatherLogPaths();
+    if (logPathsArray.length === 0) {
+      showResultNotification('Please select or add at least one log path.', 'error');
+      return;
+    }
+
+    // Convert to semicolon-delimited string
+    const logPaths = logPathsArray.join(';');
+
+    // Hide modal and proceed with log collection
+    hideCollectLogsModal();
 
     try {
       const { mdmDeviceId } = await verifyMdmUrl();
       const token = await getToken();
+      
       // Get device data to find the primary user
       const deviceData = await fetchJSON(`https://graph.microsoft.com/beta/deviceManagement/manageddevices('${mdmDeviceId}')`, {
         method: "GET",
@@ -4111,29 +4290,27 @@ document.addEventListener("DOMContentLoaded", () => {
       const userObjectId = userData.value[0].id;
 
       // Format the log paths for the API - with proper escaping
-      const logPathsArray = [];
+      const logPathsFormatted = [];
       logPaths.split(';').forEach(path => {
         const trimmedPath = path.trim();
         if (trimmedPath.length > 0) {
           // Replace single backslashes with double backslashes
-          // But don't stringify yet to avoid extra escaping
           const escapedPath = trimmedPath.replace(/\\/g, '\\\\');
-          logPathsArray.push(`"${escapedPath}"`);
+          logPathsFormatted.push(`"${escapedPath}"`);
         }
       });
 
-      if (logPathsArray.length === 0) {
+      if (logPathsFormatted.length === 0) {
         throw new Error("No valid log paths provided.");
       }
 
       // Create raw JSON string with exactly the format needed
-      // Note: We're manually constructing the JSON to avoid extra escaping by JSON.stringify
       const rawJsonBody = `{
-        "customLogFolders": [${logPathsArray.join(', ')}],
+        "customLogFolders": [${logPathsFormatted.join(', ')}],
         "id": "${userObjectId}_${mdmDeviceId}_${appId}"
       }`;
 
-      logMessage(`collectLogs: Log paths: ${JSON.stringify(logPathsArray)}`);
+      logMessage(`collectLogs: Log paths: ${JSON.stringify(logPathsFormatted)}`);
       logMessage(`collectLogs: Requesting logs for user ${userObjectId}, device ${mdmDeviceId}, app ${appId}`);
 
       // Make the API call
@@ -4205,12 +4382,29 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   document.getElementById("closeResultsBtn").addEventListener("click", hideClearMembersModal);
   
+  // Collect Logs Modal Event Listeners
+  document.getElementById("collectLogsModalClose").addEventListener("click", hideCollectLogsModal);
+  document.getElementById("addCustomPathBtn").addEventListener("click", addCustomPath);
+  document.getElementById("customPathInput").addEventListener("keypress", (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addCustomPath();
+    }
+  });
+  document.getElementById("confirmCollectLogsBtn").addEventListener("click", confirmCollectLogs);
+  document.getElementById("cancelCollectLogsBtn").addEventListener("click", hideCollectLogsModal);
+  
   // Close modal on Escape key
   document.addEventListener("keydown", (e) => {
     if (e.key === 'Escape') {
-      const modal = document.getElementById('clearMembersModal');
-      if (modal && modal.style.display === 'flex') {
+      const clearModal = document.getElementById('clearMembersModal');
+      if (clearModal && clearModal.style.display === 'flex') {
         hideClearMembersModal();
+      }
+      
+      const collectLogsModal = document.getElementById('collectLogsModal');
+      if (collectLogsModal && collectLogsModal.style.display === 'flex') {
+        hideCollectLogsModal();
       }
     }
   });
@@ -4219,6 +4413,12 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById('clearMembersModal').addEventListener('click', (e) => {
     if (e.target.id === 'clearMembersModal') {
       hideClearMembersModal();
+    }
+  });
+  
+  document.getElementById('collectLogsModal').addEventListener('click', (e) => {
+    if (e.target.id === 'collectLogsModal') {
+      hideCollectLogsModal();
     }
   });
   

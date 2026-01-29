@@ -298,6 +298,83 @@
     </div>
   </div>
 
+  <!-- Collect Logs Modal Dialog -->
+  <div id="collectLogsModal" class="modal-overlay" style="display: none;">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h6>Collect Device Logs</h6>
+        <button class="modal-close" id="collectLogsModalClose">
+          <i class="material-icons">close</i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-description">Configure log collection settings for the device.</p>
+        
+        <!-- Application ID Input -->
+        <div class="collect-logs-section">
+          <label class="collect-logs-label">
+            <i class="material-icons">app_registration</i>
+            Application ID
+          </label>
+          <input type="text" id="collectLogsAppId" class="collect-logs-input" 
+                 placeholder="Enter Intune Win32 application ID">
+          <p class="collect-logs-hint">Recommend using a dummy app ID to initialize log collection.</p>
+        </div>
+
+        <!-- Predefined Log Paths -->
+        <div class="collect-logs-section">
+          <label class="collect-logs-label">
+            <i class="material-icons">folder_special</i>
+            Predefined Log Paths
+          </label>
+          <div class="collect-logs-checkboxes">
+            <label class="collect-logs-checkbox-label">
+              <input type="checkbox" id="logPathPSADT" data-path="%WINDIR%\Logs\Software\*.log">
+              <span>PSADT - %WINDIR%\Logs\Software\*.log</span>
+            </label>
+            <label class="collect-logs-checkbox-label">
+              <input type="checkbox" id="logPathIME" data-path="%PROGRAMDATA%\Microsoft\IntuneManagementExtension\Logs\*.log" checked>
+              <span>IME - %PROGRAMDATA%\Microsoft\IntuneManagementExtension\Logs\*.log</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Custom Log Paths -->
+        <div class="collect-logs-section">
+          <label class="collect-logs-label">
+            <i class="material-icons">create_new_folder</i>
+            Custom Log Paths
+          </label>
+          <div class="custom-paths-input-group">
+            <input type="text" id="customPathInput" class="collect-logs-input" 
+                   placeholder="e.g., %TEMP%\MyApp\*.log">
+            <button id="addCustomPathBtn" class="btn-add-path">
+              <i class="material-icons">add</i>
+              Add
+            </button>
+          </div>
+          <p class="collect-logs-hint">
+            Supported variables: %PROGRAMFILES%, %PROGRAMDATA%, %PUBLIC%, %WINDIR%, %TEMP%, %TMP%
+          </p>
+          
+          <!-- Custom Paths List -->
+          <div id="customPathsList" class="custom-paths-list">
+            <!-- Dynamic custom paths will be added here -->
+          </div>
+        </div>
+
+        <!-- Modal Actions -->
+        <div class="modal-actions">
+          <button id="confirmCollectLogsBtn" class="btn-confirm">
+            <i class="material-icons">bug_report</i>
+            Collect Logs
+          </button>
+          <button id="cancelCollectLogsBtn" class="btn-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="js/parseJSON.js"></script>
   <script src="js/logMessage.js"></script>
   <script src="js/showNotification.js"></script>
