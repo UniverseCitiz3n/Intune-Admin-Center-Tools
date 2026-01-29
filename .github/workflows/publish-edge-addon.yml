@@ -24,12 +24,12 @@ jobs:
           CURRENT_VERSION=$(jq -r '.version' manifest.json)
           echo "Current version: $CURRENT_VERSION"
           
-          # Update the extension name and description to indicate beta version
-          jq '.name = "Intune Admin Center Tools (Beta)" | .description = .description + " [BETA VERSION]"' manifest.json > manifest.json.tmp
+          # Update the extension name to indicate beta version
+          jq '.name = "Intune Admin Center Tools (Beta)"' manifest.json > manifest.json.tmp
           mv manifest.json.tmp manifest.json
           
-          echo "✅ Beta indicators added to manifest"
-          echo "Extension name and description updated for beta release"
+          echo "✅ Beta indicator added to manifest"
+          echo "Extension name updated for beta release"
           jq '{name, version, description}' manifest.json
       
       - name: Create extension package
