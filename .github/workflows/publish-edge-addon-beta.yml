@@ -9,9 +9,6 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # Only run this workflow for prereleases
-    # This condition ensures we only publish beta versions for prereleases
-    if: github.event.release.prerelease == true
     
     permissions:
       contents: read
