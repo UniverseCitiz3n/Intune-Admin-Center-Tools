@@ -1,0 +1,62 @@
+name: Publish Beta to Microsoft Edge Add-ons
+
+# This workflow automatically publishes new beta releases to the Microsoft Edge Add-ons store
+# Triggers only when a new prerelease is published on GitHub
+on:
+  release:
+    types: [prereleased]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Add beta indicator to manifest
+        run: |
+          # Read current version from manifest.json for logging
+          CURRENT_VERSION=$(jq -r '.version' manifest.json)
+          echo "Current version: $CURRENT_VERSION"
+          
+          # Update the extension name and description to indicate beta version
+          jq '.name = "Intune Admin Center Tools (Beta)" | .description = .description + " [BETA VERSION]"' manifest.json > manifest.json.tmp
+          mv manifest.json.tmp manifest.json
+          
+          echo "✅ Beta indicators added to manifest"
+          echo "Extension name and description updated for beta release"
+          jq '{name, version, description}' manifest.json
+      
+      - name: Create extension package
+        run: |
+          # Create a zip file with all extension files
+          zip -r extension.zip \
+            manifest.json \
+            background.js \
+            content.js \
+            popup.html \
+            popup.js \
+            style.css \
+            extension_icon16.png \
+            extension_icon32.png \
+            extension_icon48.png \
+            extension_icon128.png \
+            js/
+          
+          echo "✅ Extension package created successfully"
+          ls -lh extension.zip
+      
+      - name: Publish to Microsoft Edge Add-ons (Beta)
+        uses: wdzeng/edge-addon@v2
+        with:
+          product-id: ${{ secrets.EDGE_BETA_PRODUCT_GUID }}
+          zip-path: extension.zip
+          # Microsoft Edge Add-ons API requires both an API key and a client ID
+          # These can be generated from the Partner Center for the beta product
+          # See: https://learn.microsoft.com/en-us/microsoft-edge/extensions/publish/api/using-addons-api
+          api-key: ${{ secrets.EDGE_BETA_PUBLISHING_API_KEY }}
+          client-id: ${{ secrets.EDGE_BETA_PUBLISHING_CLIENT_ID }}
