@@ -1534,3 +1534,54 @@ input[type="checkbox"]:disabled + span {
   transform: translateY(-2px);
   box-shadow: var(--box-shadow-md);
 }
+
+/* Dynamic Query Section */
+#dynamicQuerySection {
+  margin: 10px 0 15px 0;
+}
+
+#dynamicQuerySection details {
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 8px 12px;
+  background-color: var(--bg-color);
+}
+
+#dynamicQuerySection details[open] {
+  padding-bottom: 12px;
+}
+
+#dynamicQuerySection summary {
+  cursor: pointer;
+  padding: 4px 0;
+  font-weight: 500;
+  color: var(--accent-color);
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#dynamicQuerySection summary:hover {
+  opacity: 0.8;
+}
+
+#dynamicQuerySection summary i {
+  vertical-align: middle;
+  font-size: 18px;
+}
+
+#dynamicQueryContent {
+  margin: 8px 0 0 0;
+  padding: 12px;
+  background-color: var(--table-stripe);
+  border-left: 3px solid var(--accent-color);
+  border-radius: 4px;
+  font-family: 'Courier New', Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  color: var(--text-color);
+  line-height: 1.5;
+}

@@ -1837,10 +1837,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     logMessage(`fetchAllGroupMembers: Fetching members for group ${groupId}`);
 
-    // First, verify we can access the group itself
+    // First, verify we can access the group itself and get detailed group info
+    let groupInfo = null;
     try {
-      const groupInfoUrl = `https://graph.microsoft.com/beta/groups/${groupId}?$select=id,displayName,groupTypes,visibility,mailEnabled,securityEnabled`;
-      const groupInfo = await fetchJSON(groupInfoUrl, { method: 'GET', headers });
+      const groupInfoUrl = `https://graph.microsoft.com/beta/groups/${groupId}?$select=id,displayName,groupTypes,visibility,mailEnabled,securityEnabled,membershipRule,membershipRuleProcessingState`;
+      groupInfo = await fetchJSON(groupInfoUrl, { method: 'GET', headers });
       logMessage(`fetchAllGroupMembers: Successfully accessed group info: ${JSON.stringify(groupInfo)}`);
     } catch (error) {
       logMessage(`fetchAllGroupMembers: Failed to access group info - ${error.message}`);
@@ -1906,8 +1907,25 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       });
 
-      logMessage(`fetchAllGroupMembers: Final result - ${unique.length} unique members from ${combined.length} total entries`);
-      return { members: unique, totalCount: unique.length };
+      // Get the exact count from API responses (use @odata.count if available, otherwise use unique.length)
+      const exactCount = directRes['@odata.count'] || transitiveRes['@odata.count'] || unique.length;
+      
+      // Determine if group is dynamic
+      const isDynamic = groupInfo?.groupTypes?.includes('DynamicMembership') || false;
+      
+      logMessage(`fetchAllGroupMembers: Final result - ${unique.length} unique members from ${combined.length} total entries, exact count: ${exactCount}, isDynamic: ${isDynamic}`);
+      
+      return { 
+        members: unique, 
+        totalCount: unique.length,
+        exactCount: exactCount,
+        groupInfo: {
+          isDynamic: isDynamic,
+          membershipRule: groupInfo?.membershipRule || null,
+          membershipRuleProcessingState: groupInfo?.membershipRuleProcessingState || null,
+          groupTypes: groupInfo?.groupTypes || []
+        }
+      };
       
     } catch (error) {
       logMessage(`fetchAllGroupMembers: Error fetching group members - ${error.message}`);
@@ -1921,9 +1939,22 @@ document.addEventListener("DOMContentLoaded", () => {
         
         // Include all member types including groups
         const unique = fallbackMembers;
+        const exactCount = fallbackRes['@odata.count'] || unique.length;
+        const isDynamic = groupInfo?.groupTypes?.includes('DynamicMembership') || false;
+        
         logMessage(`fetchAllGroupMembers: Fallback successful - ${unique.length} direct members`);
         
-        return { members: unique, totalCount: unique.length };
+        return { 
+          members: unique, 
+          totalCount: unique.length,
+          exactCount: exactCount,
+          groupInfo: {
+            isDynamic: isDynamic,
+            membershipRule: groupInfo?.membershipRule || null,
+            membershipRuleProcessingState: groupInfo?.membershipRuleProcessingState || null,
+            groupTypes: groupInfo?.groupTypes || []
+          }
+        };
       } catch (fallbackError) {
         logMessage(`fetchAllGroupMembers: Fallback also failed - ${fallbackError.message}`);
         // Continue to basic fallback approaches
@@ -1949,7 +1980,19 @@ document.addEventListener("DOMContentLoaded", () => {
         logMessage(`fetchAllGroupMembers: Basic request returned ${basicMembers.length} members`);
         
         if (basicMembers.length > 0) {
-          return { members: basicMembers, totalCount: basicMembers.length };
+          const exactCount = basicRes['@odata.count'] || basicMembers.length;
+          const isDynamic = groupInfo?.groupTypes?.includes('DynamicMembership') || false;
+          return { 
+            members: basicMembers, 
+            totalCount: basicMembers.length,
+            exactCount: exactCount,
+            groupInfo: {
+              isDynamic: isDynamic,
+              membershipRule: groupInfo?.membershipRule || null,
+              membershipRuleProcessingState: groupInfo?.membershipRuleProcessingState || null,
+              groupTypes: groupInfo?.groupTypes || []
+            }
+          };
         }
       }
     } catch (basicError) {
@@ -1972,7 +2015,18 @@ document.addEventListener("DOMContentLoaded", () => {
         logMessage(`fetchAllGroupMembers: Expand request returned ${expandMembers.length} members`);
         
         if (expandMembers.length > 0) {
-          return { members: expandMembers, totalCount: expandMembers.length };
+          const isDynamic = groupInfo?.groupTypes?.includes('DynamicMembership') || false;
+          return { 
+            members: expandMembers, 
+            totalCount: expandMembers.length,
+            exactCount: expandMembers.length,
+            groupInfo: {
+              isDynamic: isDynamic,
+              membershipRule: groupInfo?.membershipRule || null,
+              membershipRuleProcessingState: groupInfo?.membershipRuleProcessingState || null,
+              groupTypes: groupInfo?.groupTypes || []
+            }
+          };
         }
       }
     } catch (expandError) {
@@ -2001,7 +2055,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // If we get here, the group truly appears to have no members
-    return { members: [], totalCount: 0 };
+    const isDynamic = groupInfo?.groupTypes?.includes('DynamicMembership') || false;
+    return { 
+      members: [], 
+      totalCount: 0,
+      exactCount: 0,
+      groupInfo: {
+        isDynamic: isDynamic,
+        membershipRule: groupInfo?.membershipRule || null,
+        membershipRuleProcessingState: groupInfo?.membershipRuleProcessingState || null,
+        groupTypes: groupInfo?.groupTypes || []
+      }
+    };
   };
 
   // Handle Checking Group Members
@@ -2029,26 +2094,40 @@ document.addEventListener("DOMContentLoaded", () => {
 
       showProcessingNotification(`Fetching members for group "${groupName}"...`);
 
-      const { members, totalCount, note } = await fetchAllGroupMembers(groupId, token);
+      const { members, totalCount, exactCount, groupInfo, note } = await fetchAllGroupMembers(groupId, token);
 
-      logMessage(`checkGroupMembers: Retrieved ${totalCount} members for group ${groupName}`);
+      logMessage(`checkGroupMembers: Retrieved ${totalCount} members for group ${groupName}, exact count: ${exactCount}, isDynamic: ${groupInfo.isDynamic}`);
 
       // Cache the group info for use by other features (e.g., Clear members)
       state.lastCheckedGroup = {
         groupId: groupId,
-        groupName: groupName
+        groupName: groupName,
+        isDynamic: groupInfo.isDynamic,
+        membershipRule: groupInfo.membershipRule
       };
 
       // Clear other data types from storage
       chrome.storage.local.remove(['lastConfigAssignments','lastAppAssignments','lastComplianceAssignments','lastPwshAssignments']);
       chrome.storage.local.set({ lastGroupMembers: members });
 
-      // Update UI
-      let displayText = `- ${groupName} (${totalCount} members)`;
+      // Update UI - show exact count and group type
+      const groupType = groupInfo.isDynamic ? 'Dynamic' : 'Assigned';
+      let displayText = `- ${groupName} (${exactCount} members, ${groupType})`;
       if (note) {
         displayText += ` - ${note}`;
       }
       document.getElementById('deviceNameDisplay').textContent = displayText;
+
+      // Show/hide dynamic query section
+      const dynamicQuerySection = document.getElementById('dynamicQuerySection');
+      if (dynamicQuerySection) {
+        if (groupInfo.isDynamic && groupInfo.membershipRule) {
+          dynamicQuerySection.style.display = 'block';
+          document.getElementById('dynamicQueryContent').textContent = groupInfo.membershipRule;
+        } else {
+          dynamicQuerySection.style.display = 'none';
+        }
+      }
 
       updateGroupMembersTable(members);
 
