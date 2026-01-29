@@ -9,6 +9,10 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Only run this workflow for production releases (not prereleases)
+    # When a prerelease is created, GitHub fires both 'prereleased' and 'published' events
+    # This condition ensures we skip execution for prereleases
+    if: github.event.release.prerelease == false
     
     permissions:
       contents: read
