@@ -19,16 +19,12 @@ jobs:
       
       - name: Add beta indicator to manifest
         run: |
-          # Read current version from manifest.json
+          # Read current version from manifest.json for logging
           CURRENT_VERSION=$(jq -r '.version' manifest.json)
           echo "Current version: $CURRENT_VERSION"
           
-          # Update the extension name to indicate it's a beta version
-          jq '.name = "Intune Admin Center Tools (Beta)"' manifest.json > manifest.json.tmp
-          mv manifest.json.tmp manifest.json
-          
-          # Update description to indicate beta
-          jq '.description = .description + " [BETA VERSION]"' manifest.json > manifest.json.tmp
+          # Update the extension name and description to indicate beta version
+          jq '.name = "Intune Admin Center Tools (Beta)" | .description = .description + " [BETA VERSION]"' manifest.json > manifest.json.tmp
           mv manifest.json.tmp manifest.json
           
           echo "✅ Beta indicators added to manifest"
