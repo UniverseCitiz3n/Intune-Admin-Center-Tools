@@ -406,6 +406,9 @@ document.addEventListener("DOMContentLoaded", () => {
       return `${rowData.policyName}-${rowData.targets[0].groupName}-${rowData.targets[0].targetType}`;
     } else if (state.currentDisplayType === 'pwsh') {
       return `${rowData.scriptName}-${rowData.targets[0].groupName}-${rowData.targets[0].targetType}`;
+    } else if (state.currentDisplayType === 'groupMembers') {
+      // Generate unique ID based on member's object ID
+      return `member-${rowData.id}`;
     }
     return '';
   };
@@ -646,9 +649,16 @@ document.addEventListener("DOMContentLoaded", () => {
       const upnOrId = member.userPrincipalName || member.deviceId || '';
       const objectId = member.id || '';
       
+      // Generate unique row ID
+      const rowData = { id: objectId };
+      const rowId = generateRowId(rowData);
+      
+      // Add selectable class for row selection
+      const selectableClass = 'table-row-selectable';
+      
       // For devices, show device ID in the UPN/Device ID column and object ID separately
       // For users, show UPN in the UPN/Device ID column and object ID separately
-      rows += `<tr data-row-index="${rowIndex}">
+      rows += `<tr class="${selectableClass}" data-row-index="${rowIndex}" data-row-id="${rowId}">
         <td style="word-wrap: break-word; white-space: normal;">${member.displayName || ''}</td>
         <td style="word-wrap: break-word; white-space: normal;">${upnOrId}</td>
         <td style="word-wrap: break-word; white-space: normal;">${objectId}</td>
@@ -658,6 +668,14 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     document.getElementById("configTableBody").innerHTML = rows;
+    
+    // Add event listeners for row clicks
+    document.querySelectorAll('#configTableBody tr').forEach((row, index) => {
+      row.addEventListener('click', (e) => handleTableRowClick(row, index));
+    });
+
+    // Restore selection state
+    restoreRowSelection();
   };
 
   const renderGroupAssignmentsTablePage = (assignments) => {
@@ -1879,12 +1897,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const seen = new Set();
       
       combined.forEach(m => {
-        // Skip nested groups to avoid infinite recursion
-        if (m['@odata.type'] === '#microsoft.graph.group') {
-          logMessage(`fetchAllGroupMembers: Skipping nested group: ${m.displayName || m.id}`);
-          return;
-        }
-        
+        // Include all member types including nested groups
         if (!seen.has(m.id)) {
           seen.add(m.id);
           unique.push(m);
@@ -1905,7 +1918,8 @@ document.addEventListener("DOMContentLoaded", () => {
         logMessage(`fetchAllGroupMembers: Fallback response: ${JSON.stringify(fallbackRes)}`);
         const fallbackMembers = fallbackRes.value || [];
         
-        const unique = fallbackMembers.filter(m => m['@odata.type'] !== '#microsoft.graph.group');
+        // Include all member types including groups
+        const unique = fallbackMembers;
         logMessage(`fetchAllGroupMembers: Fallback successful - ${unique.length} direct members`);
         
         return { members: unique, totalCount: unique.length };
@@ -1929,20 +1943,12 @@ document.addEventListener("DOMContentLoaded", () => {
       logMessage(`fetchAllGroupMembers: Basic request response: ${JSON.stringify(basicRes)}`);
       
       if (basicRes.value && Array.isArray(basicRes.value)) {
-        // Filter out nested groups and return actual members
-        const basicMembers = basicRes.value.filter(m => m['@odata.type'] !== '#microsoft.graph.group');
-        logMessage(`fetchAllGroupMembers: Basic request returned ${basicMembers.length} non-group members out of ${basicRes.value.length} total`);
+        // Include all member types including groups
+        const basicMembers = basicRes.value;
+        logMessage(`fetchAllGroupMembers: Basic request returned ${basicMembers.length} members`);
         
         if (basicMembers.length > 0) {
           return { members: basicMembers, totalCount: basicMembers.length };
-        } else if (basicRes.value.length > 0) {
-          // All members were groups - this might be a nested group structure
-          logMessage(`fetchAllGroupMembers: All ${basicRes.value.length} members are groups - this appears to be a group containing only other groups`);
-          return { 
-            members: [], 
-            totalCount: 0,
-            note: `This group contains ${basicRes.value.length} nested groups but no direct user/device members` 
-          };
         }
       }
     } catch (basicError) {
@@ -1960,8 +1966,9 @@ document.addEventListener("DOMContentLoaded", () => {
       logMessage(`fetchAllGroupMembers: Expand request response: ${JSON.stringify(expandRes)}`);
       
       if (expandRes.members && Array.isArray(expandRes.members)) {
-        const expandMembers = expandRes.members.filter(m => m['@odata.type'] !== '#microsoft.graph.group');
-        logMessage(`fetchAllGroupMembers: Expand request returned ${expandMembers.length} non-group members`);
+        // Include all member types including groups
+        const expandMembers = expandRes.members;
+        logMessage(`fetchAllGroupMembers: Expand request returned ${expandMembers.length} members`);
         
         if (expandMembers.length > 0) {
           return { members: expandMembers, totalCount: expandMembers.length };
