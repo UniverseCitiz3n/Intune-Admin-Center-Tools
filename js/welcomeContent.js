@@ -96,7 +96,6 @@ const WELCOME_CONTENT = {
     title: 'Welcome to Intune Admin Center Tools v1.4.2!',
     intro: `This release fixes an important issue with CSV exports for international users.`,
     changelog: [
-      'FIX: Polish and other special characters now display correctly in CSV exports',
       'FIX: Added UTF-8 BOM to CSV files for proper encoding in Excel and other applications',
       'v1.4.1 features:',
       '  - UI: Welcome Guide closing behavior improved',
@@ -122,7 +121,7 @@ const WELCOME_CONTENT = {
       'Switch between Device and User modes using the toggle buttons',
       'Filter results using the search boxes for better navigation',
       'Click the download icon in the pagination area to export the table to CSV',
-      'CSV exports now support Polish and other special characters correctly'
+      'CSV exports now support UTF-8 with BOM for better compatibility'
     ]
   },
 
