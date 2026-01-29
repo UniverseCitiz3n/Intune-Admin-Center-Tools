@@ -1759,15 +1759,71 @@ input[type="checkbox"]:disabled + span {
   border-color: var(--warning-color);
 }
 
-.collect-logs-error-message {
-  margin: 6px 0 0 0;
-  font-size: 0.8rem;
-  color: var(--warning-color);
+/* Tooltip bubble for validation errors */
+.collect-logs-error-tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  background: var(--warning-color);
+  color: white;
+  font-size: 0.85rem;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  z-index: 1000;
+  animation: tooltipFadeIn 0.2s ease-out;
+  pointer-events: none;
 }
 
-.collect-logs-error-message i {
-  font-size: 16px;
+.collect-logs-error-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 20px;
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid var(--warning-color);
+}
+
+.collect-logs-error-tooltip i {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.collect-logs-error-tooltip.fade-out {
+  animation: tooltipFadeOut 0.3s ease-out forwards;
+}
+
+@keyframes tooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes tooltipFadeOut {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* Ensure parent container has relative positioning for tooltip */
+.custom-paths-input-group {
+  position: relative;
 }

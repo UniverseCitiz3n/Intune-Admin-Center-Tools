@@ -4169,22 +4169,31 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
-  // Show input error
+  // Show input error as tooltip bubble with auto-dismiss
   const showInputError = (inputId, message) => {
     const input = document.getElementById(inputId);
     input.classList.add('error');
     
-    // Remove existing error message if any
-    const existingError = input.parentElement.querySelector('.collect-logs-error-message');
+    // Remove existing error tooltip if any
+    const existingError = input.parentElement.querySelector('.collect-logs-error-tooltip');
     if (existingError) {
       existingError.remove();
     }
     
-    // Add error message
-    const errorMsg = document.createElement('p');
-    errorMsg.className = 'collect-logs-error-message';
-    errorMsg.innerHTML = `<i class="material-icons">error</i>${message}`;
-    input.parentElement.appendChild(errorMsg);
+    // Add error tooltip
+    const errorTooltip = document.createElement('div');
+    errorTooltip.className = 'collect-logs-error-tooltip';
+    errorTooltip.innerHTML = `<i class="material-icons">error</i><span>${message}</span>`;
+    input.parentElement.appendChild(errorTooltip);
+    
+    // Auto-dismiss after 4 seconds
+    setTimeout(() => {
+      errorTooltip.classList.add('fade-out');
+      setTimeout(() => {
+        errorTooltip.remove();
+        input.classList.remove('error');
+      }, 300); // Wait for fade-out animation to complete
+    }, 4000);
   };
 
   // Clear input error
@@ -4192,9 +4201,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const input = document.getElementById(inputId);
     input.classList.remove('error');
     
-    const errorMsg = input.parentElement.querySelector('.collect-logs-error-message');
-    if (errorMsg) {
-      errorMsg.remove();
+    const errorTooltip = input.parentElement.querySelector('.collect-logs-error-tooltip');
+    if (errorTooltip) {
+      errorTooltip.remove();
     }
   };
 
