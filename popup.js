@@ -7,6 +7,7 @@ document.addEventListener("DOMContentLoaded", () => {
     targetMode: 'device', // New: track whether we're targeting devices or users
     selectedTableRows: new Set(), // Track selected table rows
     dynamicGroups: new Set(), // Track dynamic groups that cannot be modified manually
+    lastCheckedGroup: null, // Cache the last group checked via "Check members"
     pagination: {
       currentPage: 1,
       itemsPerPage: 10,
@@ -2032,6 +2033,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
       logMessage(`checkGroupMembers: Retrieved ${totalCount} members for group ${groupName}`);
 
+      // Cache the group info for use by other features (e.g., Clear members)
+      state.lastCheckedGroup = {
+        groupId: groupId,
+        groupName: groupName
+      };
+
       // Clear other data types from storage
       chrome.storage.local.remove(['lastConfigAssignments','lastAppAssignments','lastComplianceAssignments','lastPwshAssignments']);
       chrome.storage.local.set({ lastGroupMembers: members });
@@ -2477,14 +2484,25 @@ document.addEventListener("DOMContentLoaded", () => {
   const handleClearGroupMembers = async () => {
     logMessage("clearGroupMembers clicked");
     
-    const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
-    if (selected.length !== 1) {
-      showResultNotification('Select exactly one group to clear members.', 'error');
-      return;
+    // Try to use cached group info if we're viewing group members
+    let groupId, groupName;
+    
+    if (state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup) {
+      // Use cached group info from "Check members"
+      groupId = state.lastCheckedGroup.groupId;
+      groupName = state.lastCheckedGroup.groupName;
+      logMessage(`clearGroupMembers: Using cached group - ID: ${groupId}, Name: ${groupName}`);
+    } else {
+      // Fall back to requiring selected group from search results
+      const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
+      if (selected.length !== 1) {
+        showResultNotification('Select exactly one group to clear members.', 'error');
+        return;
+      }
+      groupId = selected[0].value;
+      groupName = selected[0].dataset.groupName;
+      logMessage(`clearGroupMembers: Using selected group - ID: ${groupId}, Name: ${groupName}`);
     }
-
-    const groupId = selected[0].value;
-    const groupName = selected[0].dataset.groupName;
     
     // Check if group is dynamic
     if (isDynamicGroup(groupId)) {
@@ -2495,7 +2513,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    logMessage(`clearGroupMembers: Selected group - ID: ${groupId}, Name: ${groupName}`);
+    logMessage(`clearGroupMembers: Processing group - ID: ${groupId}, Name: ${groupName}`);
 
     try {
       const token = await getToken();
@@ -2547,22 +2565,42 @@ document.addEventListener("DOMContentLoaded", () => {
   // Update the button state based on selected group type
   const updateClearMembersButtonState = () => {
     const clearBtn = document.getElementById('clearGroupMembers');
-    const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
     
-    if (selected.length !== 1) {
-      clearBtn.classList.remove('disabled');
-      clearBtn.title = '';
+    // Check if we have a cached group from "Check members"
+    const hasCachedGroup = state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup;
+    
+    // Check if we have a selected group from search results
+    const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
+    const hasSelectedGroup = selected.length === 1;
+    
+    // Button should be enabled if we have either a cached group or a selected group
+    if (hasCachedGroup) {
+      // Check if the cached group is dynamic
+      if (isDynamicGroup(state.lastCheckedGroup.groupId)) {
+        clearBtn.classList.add('disabled');
+        clearBtn.title = 'Only available for Assigned groups. Dynamic membership cannot be manually cleared.';
+      } else {
+        clearBtn.classList.remove('disabled');
+        clearBtn.title = '';
+      }
       return;
     }
     
-    const groupId = selected[0].value;
-    if (isDynamicGroup(groupId)) {
-      clearBtn.classList.add('disabled');
-      clearBtn.title = 'Only available for Assigned groups. Dynamic membership cannot be manually cleared.';
-    } else {
-      clearBtn.classList.remove('disabled');
-      clearBtn.title = '';
+    if (hasSelectedGroup) {
+      const groupId = selected[0].value;
+      if (isDynamicGroup(groupId)) {
+        clearBtn.classList.add('disabled');
+        clearBtn.title = 'Only available for Assigned groups. Dynamic membership cannot be manually cleared.';
+      } else {
+        clearBtn.classList.remove('disabled');
+        clearBtn.title = '';
+      }
+      return;
     }
+    
+    // No cached group and no selected group - button stays enabled but will show error when clicked
+    clearBtn.classList.remove('disabled');
+    clearBtn.title = '';
   };
 
   // ══════════════════════════════════════════════════════════════
