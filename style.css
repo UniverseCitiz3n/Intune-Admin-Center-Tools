@@ -1585,3 +1585,189 @@ input[type="checkbox"]:disabled + span {
   color: var(--text-color);
   line-height: 1.5;
 }
+
+/* ================================================== */
+/* Collect Logs Modal Styles                          */
+/* ================================================== */
+
+.collect-logs-section {
+  margin-bottom: 20px;
+}
+
+.collect-logs-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--text-color);
+  margin-bottom: 8px;
+  font-size: 0.95rem;
+}
+
+.collect-logs-label i {
+  font-size: 18px;
+  color: var(--accent-color);
+}
+
+.collect-logs-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 2px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  font-size: 0.95rem;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.collect-logs-input:focus {
+  outline: none;
+  border-color: var(--accent-color);
+}
+
+.collect-logs-hint {
+  margin: 6px 0 0 0;
+  font-size: 0.8rem;
+  color: var(--text-color);
+  opacity: 0.7;
+  font-style: italic;
+}
+
+.collect-logs-checkboxes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.collect-logs-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--header-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.collect-logs-checkbox-label:hover {
+  background: var(--btn-modern-hover-bg);
+  border-color: var(--accent-color);
+}
+
+.collect-logs-checkbox-label input[type="checkbox"] {
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+.collect-logs-checkbox-label span {
+  flex: 1;
+  color: var(--text-color);
+  font-size: 0.9rem;
+  font-family: 'Courier New', Consolas, monospace;
+}
+
+.custom-paths-input-group {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.custom-paths-input-group .collect-logs-input {
+  flex: 1;
+}
+
+.btn-add-path {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 16px;
+  background: var(--accent-color);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.btn-add-path:hover {
+  background: #1fa6b8;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(38, 198, 218, 0.3);
+}
+
+.btn-add-path i {
+  font-size: 18px;
+}
+
+.custom-paths-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.custom-path-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--header-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  gap: 10px;
+}
+
+.custom-path-text {
+  flex: 1;
+  color: var(--text-color);
+  font-size: 0.9rem;
+  font-family: 'Courier New', Consolas, monospace;
+  word-break: break-all;
+}
+
+.btn-remove-path {
+  background: none;
+  border: none;
+  color: var(--warning-color);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.btn-remove-path:hover {
+  background: rgba(255, 152, 0, 0.1);
+}
+
+.btn-remove-path i {
+  font-size: 20px;
+}
+
+/* Error state for input validation */
+.collect-logs-input.error {
+  border-color: var(--warning-color);
+}
+
+.collect-logs-error-message {
+  margin: 6px 0 0 0;
+  font-size: 0.8rem;
+  color: var(--warning-color);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.collect-logs-error-message i {
+  font-size: 16px;
+}
