@@ -1,10 +1,10 @@
 name: Publish to Microsoft Edge Add-ons
 
 # This workflow automatically publishes new releases to the Microsoft Edge Add-ons store
-# Triggers only when a new production release is published on GitHub
+# Triggers only when a new production release (not prerelease) is published on GitHub
 on:
   release:
-    types: [published]
+    types: [released]
 
 jobs:
   publish:
