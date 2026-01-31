@@ -2239,7 +2239,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const getSelectedMembers = () => {
     const selectedIds = Array.from(state.pagination.selectedRowIds);
     return clearMembersState.allMembers.filter(member => 
-      selectedIds.includes(member.id)
+      selectedIds.includes(`member-${member.id}`)
     );
   };
 
