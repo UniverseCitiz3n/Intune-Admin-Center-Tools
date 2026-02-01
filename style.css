@@ -337,7 +337,7 @@ table {
 .table-row-selectable {
   cursor: pointer;
   transition: background-color 0.2s ease;
-  user-select: none;
+  user-select: text;
 }
 
 .table-row-selectable:hover {
