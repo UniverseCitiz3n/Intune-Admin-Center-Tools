@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Text Selection Test</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body {
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .test-section {
+      margin: 20px 0;
+      padding: 20px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+    }
+    .test-title {
+      font-weight: bold;
+      margin-bottom: 10px;
+      color: #333;
+    }
+    .success-message {
+      padding: 10px;
+      background: #d4edda;
+      border: 1px solid #c3e6cb;
+      border-radius: 4px;
+      color: #155724;
+      margin: 10px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>Text Selection Test - Intune Admin Center Tools</h1>
+  
+  <div class="success-message">
+    ✅ CSS changes applied: user-select changed from "none" to "text" for table rows
+  </div>
+
+  <div class="test-section">
+    <div class="test-title">Test 1: Group Results (should always be selectable)</div>
+    <div id="groupResults">
+      <p><label><input type="checkbox" class="filled-in"><span>Marketing Team</span></label></p>
+      <p><label><input type="checkbox" class="filled-in"><span>Sales Department</span></label></p>
+      <p><label><input type="checkbox" class="filled-in"><span>Engineering Group</span></label></p>
+    </div>
+    <p style="font-size: 12px; color: #666; margin-top: 10px;">
+      Try selecting text in the group names above. This should work.
+    </p>
+  </div>
+
+  <div class="test-section">
+    <div class="test-title">Test 2: Table Rows (now selectable with user-select: text)</div>
+    <table class="striped">
+      <thead>
+        <tr>
+          <th class="sortable">Policy Name</th>
+          <th>Group Name</th>
+          <th>Membership Type</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="table-row-selectable">
+          <td>Windows Update Policy</td>
+          <td>All Devices</td>
+          <td>Direct</td>
+        </tr>
+        <tr class="table-row-selectable">
+          <td>Security Baseline - Windows 11</td>
+          <td>Corporate Devices</td>
+          <td>Transitive</td>
+        </tr>
+        <tr class="table-row-selectable">
+          <td>BitLocker Encryption Policy</td>
+          <td>Finance Department</td>
+          <td>Direct</td>
+        </tr>
+        <tr class="table-row-disabled">
+          <td>Dynamic Group Policy</td>
+          <td>Auto-enrolled Devices</td>
+          <td>Dynamic</td>
+        </tr>
+      </tbody>
+    </table>
+    <p style="font-size: 12px; color: #666; margin-top: 10px;">
+      Try selecting text in the table cells above. This should now work! 
+      The disabled row (grayed out) should also allow text selection.
+    </p>
+  </div>
+
+  <div class="test-section">
+    <div class="test-title">Test 3: Dark Mode</div>
+    <button onclick="toggleTheme()" style="padding: 10px 20px; cursor: pointer;">
+      Toggle Dark/Light Mode
+    </button>
+    <p style="font-size: 12px; color: #666; margin-top: 10px;">
+      Click the button above to test in dark mode. Text selection should work in both themes.
+    </p>
+  </div>
+
+  <script>
+    function toggleTheme() {
+      const currentTheme = document.body.getAttribute('data-theme');
+      document.body.setAttribute('data-theme', currentTheme === 'dark' ? 'light' : 'dark');
+    }
+  </script>
+</body>
+</html>

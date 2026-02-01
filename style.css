@@ -273,6 +273,11 @@ input[type="text"]::placeholder {
 
 #groupResults span {
   color: var(--group-text) !important;
+  user-select: text; /* Allow text selection in group names */
+}
+
+#groupResults label {
+  user-select: text; /* Allow text selection in group labels */
 }
 
 /* Button styling - Updated for dark mode */
@@ -328,6 +333,10 @@ table.striped > tbody > tr:nth-child(odd) {
 
 table {
   color: var(--text-color);
+}
+
+table td {
+  user-select: text; /* Allow text selection in table cells */
 }
 
 .sortable:hover {
