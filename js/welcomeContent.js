@@ -125,6 +125,36 @@ const WELCOME_CONTENT = {
     ]
   },
 
+  '1.4.3': {
+    title: 'Welcome to Intune Admin Center Tools v1.4.3!',
+    intro: `This release enables text selection and copying from tables and group search results.`,
+    changelog: [
+      'NEW: Text selection enabled in all data tables',
+      'NEW: Text selection enabled in group search results',
+      'Users can now copy policy names, group names, and other data to clipboard'
+    ],
+    features: [
+      'Search and manage Azure AD groups',
+      'Check device/user configuration assignments',
+      'Manage group memberships (add/remove devices and users)',
+      'Check compliance policy assignments',
+      'View app assignments',
+      'Dark/Light theme support',
+      'Download PowerShell scripts for automation',
+      'Check group assignments',
+      'Export output tables to CSV with proper character encoding',
+      'Copy text from tables and search results (new)'
+    ],
+    tips: [
+      'Use Ctrl+Shift+W to show this welcome message anytime',
+      'The extension works on any Intune Admin Center page',
+      'Switch between Device and User modes using the toggle buttons',
+      'Filter results using the search boxes for better navigation',
+      'Click the download icon in the pagination area to export the table to CSV',
+      'Click and drag to select text in tables and group names, then copy with Ctrl+C'
+    ]
+  },
+
   // Default fallback content
   'default': {
     title: 'Welcome to Intune Admin Center Tools!',

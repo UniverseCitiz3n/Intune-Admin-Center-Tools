@@ -273,6 +273,11 @@ input[type="text"]::placeholder {
 
 #groupResults span {
   color: var(--group-text) !important;
+  user-select: text; /* Allow text selection in group names */
+}
+
+#groupResults label {
+  user-select: text; /* Allow text selection in group labels */
 }
 
 /* Button styling - Updated for dark mode */
@@ -337,7 +342,11 @@ table {
 .table-row-selectable {
   cursor: pointer;
   transition: background-color 0.2s ease;
-  user-select: none;
+}
+
+.table-row-selectable td,
+.table-row-disabled td {
+  user-select: text; /* Allow text selection in table cells */
 }
 
 .table-row-selectable:hover {
