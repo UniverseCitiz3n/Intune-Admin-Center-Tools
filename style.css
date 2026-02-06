@@ -42,13 +42,22 @@
   --box-shadow-md: 0 3px 6px rgba(255, 255, 255, 0.08);
 }
 
+html {
+  min-width: 850px;
+  min-height: 650px;
+}
+
 body { 
-  width: 800px; 
-  height: 600px; 
+  min-width: 850px; 
+  min-height: 650px; 
+  width: 850px; 
+  height: 650px; 
   padding: 10px;
   background-color: var(--bg-color);
   color: var(--text-color);
   transition: all 0.3s ease;
+  resize: both;
+  overflow: auto;
 }
 
 .container { width: 95%; }
