@@ -2754,11 +2754,11 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    // Try JSON object / hashtable: {"k":"v"} or @{"k"="v"}
+    // Try JSON object / hashtable: {"k":"v"}
+    // Note: PowerShell @{k="v"} syntax is not JSON-compatible and will fall through to line-based parsing
     let objectText = text;
-    // Handle PowerShell hashtable @{...} syntax
     if (objectText.startsWith('@{') && objectText.endsWith('}')) {
-      objectText = objectText.slice(1); // Remove leading @
+      objectText = objectText.slice(1); // Remove leading @ to try as JSON
     }
     if (objectText.startsWith('{')) {
       try {
@@ -2801,6 +2801,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // Resolve a single item to a directory object ID
   const resolveItemToDirectoryId = async (item, token) => {
     const headers = { "Authorization": token, "Content-Type": "application/json" };
+    // Escape single quotes for OData filter values
+    const escapedItem = item.replace(/'/g, "''");
 
     // Check if item looks like a GUID
     const guidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -2821,7 +2823,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Check if item looks like a UPN (contains @)
     if (item.includes('@')) {
       try {
-        const userData = await fetchJSON(`https://graph.microsoft.com/v1.0/users?$filter=userPrincipalName eq '${encodeURIComponent(item)}'&$select=id,displayName,userPrincipalName`, {
+        const userData = await fetchJSON(`https://graph.microsoft.com/v1.0/users?$filter=userPrincipalName eq '${encodeURIComponent(escapedItem)}'&$select=id,displayName,userPrincipalName`, {
           method: "GET", headers
         });
         if (userData.value && userData.value.length > 0) {
@@ -2834,7 +2836,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Try as device displayName
     try {
-      const deviceData = await fetchJSON(`https://graph.microsoft.com/v1.0/devices?$filter=displayName eq '${encodeURIComponent(item)}'&$select=id,displayName`, {
+      const deviceData = await fetchJSON(`https://graph.microsoft.com/v1.0/devices?$filter=displayName eq '${encodeURIComponent(escapedItem)}'&$select=id,displayName`, {
         method: "GET", headers
       });
       if (deviceData.value && deviceData.value.length > 0) {
@@ -2846,7 +2848,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Try as user displayName
     try {
-      const userData = await fetchJSON(`https://graph.microsoft.com/v1.0/users?$filter=displayName eq '${encodeURIComponent(item)}'&$select=id,displayName,userPrincipalName`, {
+      const userData = await fetchJSON(`https://graph.microsoft.com/v1.0/users?$filter=displayName eq '${encodeURIComponent(escapedItem)}'&$select=id,displayName,userPrincipalName`, {
         method: "GET", headers
       });
       if (userData.value && userData.value.length > 0) {
@@ -3039,10 +3041,10 @@ document.addEventListener("DOMContentLoaded", () => {
         token
       );
 
-      // Append unresolved items to failures
+      // Append unresolved items to failures (total starts at resolved.length, add unresolved)
+      results.total += unresolved.length;
+      results.failed += unresolved.length;
       unresolved.forEach(item => {
-        results.total++;
-        results.failed++;
         results.failures.push({
           memberName: item,
           reason: 'Could not resolve to a user or device'
