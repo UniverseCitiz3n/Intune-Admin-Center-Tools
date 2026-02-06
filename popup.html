@@ -154,6 +154,10 @@
                 <i class="material-icons">clear_all</i>
                 <span>Clear Members</span>
               </a>
+              <a id="bulkAddMembers" class="btn-modern full-width" role="button">
+                <i class="material-icons">playlist_add</i>
+                <span>Bulk Add</span>
+              </a>
             </div>
           </div>
 
@@ -292,6 +296,63 @@
             <p id="resultsSummary" class="results-title"></p>
             <div id="resultsDetails" class="results-details"></div>
             <button id="closeResultsBtn" class="btn-close-results">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bulk Add Members Modal Dialog -->
+  <div id="bulkAddModal" class="modal-overlay" style="display: none;">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h6>Bulk Add Members</h6>
+        <button class="modal-close" id="bulkAddModalClose">
+          <i class="material-icons">close</i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p id="bulkAddGroupName" class="modal-group-name"></p>
+
+        <!-- Input section -->
+        <div id="bulkAddInputSection">
+          <p class="modal-description">Paste a list of members to add. Supported formats:</p>
+          <ul class="bulk-add-formats-list">
+            <li>Device names or IDs, one per line</li>
+            <li>User UPNs or IDs, one per line</li>
+            <li>Comma, semicolon, or tab delimited values</li>
+            <li>JSON array: <code>["value1","value2"]</code></li>
+          </ul>
+          <textarea id="bulkAddInput" class="bulk-add-textarea" 
+                    placeholder="Paste your data here...&#10;&#10;Examples:&#10;device1&#10;device2&#10;&#10;or: user1@domain.com, user2@domain.com&#10;&#10;or: [&quot;value1&quot;,&quot;value2&quot;]" rows="10"></textarea>
+          <p id="bulkAddParsedCount" class="bulk-add-parsed-count"></p>
+
+          <div class="modal-actions">
+            <button id="confirmBulkAddBtn" class="btn-confirm bulk-add-confirm" disabled>
+              <i class="material-icons">group_add</i>
+              Add Members
+            </button>
+            <button id="cancelBulkAddBtn" class="btn-cancel">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Progress section -->
+        <div id="bulkAddProgressSection" style="display: none;">
+          <div class="progress-info">
+            <p id="bulkAddProgressMessage">Adding members...</p>
+            <div class="progress-bar-container">
+              <div id="bulkAddProgressBar" class="progress-bar"></div>
+            </div>
+            <p id="bulkAddProgressDetails" class="progress-details"></p>
+          </div>
+        </div>
+
+        <!-- Results section -->
+        <div id="bulkAddResultsSection" style="display: none;">
+          <div class="results-summary">
+            <p id="bulkAddResultsSummary" class="results-title"></p>
+            <div id="bulkAddResultsDetails" class="results-details"></div>
+            <button id="closeBulkAddResultsBtn" class="btn-close-results">Close</button>
           </div>
         </div>
       </div>
