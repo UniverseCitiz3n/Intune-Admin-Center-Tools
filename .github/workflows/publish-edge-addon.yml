@@ -13,6 +13,9 @@ jobs:
     permissions:
       contents: read
     
+    env:
+      TESTER_NOTES: "Cannot provide a shared test account because the extension requires tenant-specific permissions and data. Evaluation must be done in the reviewer's own tenant with appropriate permissions. Required permissions: either an Intune RBAC role or an Intune Administrator role that grants access to the targeted features. No additional setup beyond installing the extension and signing in with a user that has the required role"
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -62,6 +65,7 @@ jobs:
           # See: https://learn.microsoft.com/en-us/microsoft-edge/extensions/publish/api/using-addons-api
           api-key: ${{ secrets.EDGE_PUBLISHING_API_KEY }}
           client-id: ${{ secrets.EDGE_PUBLISHING_CLIENT_ID }}
+          notes-for-certification: ${{ env.TESTER_NOTES }}
       
       - name: Publish to Microsoft Edge Add-ons (Beta)
         if: github.event.release.prerelease == true
@@ -74,3 +78,4 @@ jobs:
           # See: https://learn.microsoft.com/en-us/microsoft-edge/extensions/publish/api/using-addons-api
           api-key: ${{ secrets.EDGE_BETA_PUBLISHING_API_KEY }}
           client-id: ${{ secrets.EDGE_BETA_PUBLISHING_CLIENT_ID }}
+          notes-for-certification: ${{ env.TESTER_NOTES }}
