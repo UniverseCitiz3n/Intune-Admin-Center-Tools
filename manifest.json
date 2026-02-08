@@ -36,11 +36,5 @@
     "action": {
         "default_popup": "popup.html",
         "default_title": "Intune Admin Center Tools"
-    },
-    "web_accessible_resources": [
-        {
-            "resources": ["analytics.js"],
-            "matches": ["<all_urls>"]
-        }
-    ]
+    }
 }

@@ -75,9 +75,32 @@ const GA_API_SECRET = 'xYz123AbC456DeF789GhI012JkL345';
 4. Or, if already loaded, click the **Reload** button for the extension
 
 ### For Production Release
-1. Commit the updated `analytics.js` file to your repository
-2. Create a new release/version
-3. Follow your normal extension publishing workflow
+
+**IMPORTANT SECURITY NOTE**: The placeholder credentials in `analytics.js` are not functional and need to be replaced with real credentials before deployment. Consider these approaches:
+
+#### Option A: Direct Replacement (Simple but Less Secure)
+1. Replace the placeholder values in `analytics.js` with your actual credentials
+2. Commit to a private branch or repository
+3. Build and package the extension
+4. Upload to extension store
+
+**⚠️ Warning**: This approach exposes credentials in the published extension code. While they're used client-side and rate-limited by Google, it's not ideal for security.
+
+#### Option B: Build-Time Injection (Recommended)
+1. Create a `.env` file (add to `.gitignore`) with:
+   ```
+   GA_MEASUREMENT_ID=G-ABC1234567
+   GA_API_SECRET=xYz123AbC456DeF789GhI012JkL345
+   ```
+2. Use a build script to inject these values during packaging
+3. Keep credentials out of version control
+4. Only the built package contains real credentials
+
+#### Option C: Configuration File (Alternative)
+1. Create an untracked `analytics-config.js` file
+2. Import it in `analytics.js`
+3. Add `analytics-config.js` to `.gitignore`
+4. Document the expected format for other developers
 
 ## Step 7: Verify Analytics is Working
 

@@ -3565,7 +3565,9 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("appsAssignment").addEventListener("click", trackAndHandle(handleAppsAssignment, "apps_assignment"));
   document.getElementById("pwshProfiles").addEventListener("click", trackAndHandle(handlePwshProfiles, "pwsh_profiles"));
   document.getElementById("collectLogs").addEventListener("click", trackAndHandle(handleCollectLogs, "collect_logs"));
-  document.getElementById("createGroup").addEventListener("click", trackAndHandle(handleCreateGroup, "create_group")); document.getElementById("groupResults").addEventListener("change", (event) => {
+  document.getElementById("createGroup").addEventListener("click", trackAndHandle(handleCreateGroup, "create_group"));
+  
+  document.getElementById("groupResults").addEventListener("change", (event) => {
     if (event.target.type === "checkbox") {
       // Clear table selections when selecting checkboxes
       clearTableSelection();

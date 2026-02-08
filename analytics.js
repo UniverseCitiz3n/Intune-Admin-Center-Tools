@@ -8,6 +8,11 @@
 // 4. Replace GA_MEASUREMENT_ID and GA_API_SECRET below with your actual values
 // 5. Deploy the extension
 //
+// SECURITY NOTE:
+// The credentials below are PLACEHOLDERS and will not work until replaced.
+// For production use, consider using environment variables during build time
+// or a configuration file that is not committed to the repository.
+//
 // PRIVACY NOTICE:
 // This implementation tracks ONLY:
 // - Button clicks and feature usage (no content)
@@ -17,7 +22,8 @@
 // NO personal information, device IDs, user names, tokens, or Microsoft Graph data is collected.
 
 const Analytics = (() => {
-  // GA4 Configuration
+  // GA4 Configuration - REPLACE THESE VALUES WITH YOUR ACTUAL CREDENTIALS
+  // These are PLACEHOLDERS and will not send data until configured
   const GA_MEASUREMENT_ID = 'G-XXXXXXXXXX'; // Replace with actual GA4 Measurement ID
   const GA_API_SECRET = 'XXXXXXXXXXXXXXXXXXXX'; // Replace with actual API Secret
   const MEASUREMENT_PROTOCOL_URL = `https://www.google-analytics.com/mp/collect?measurement_id=${GA_MEASUREMENT_ID}&api_secret=${GA_API_SECRET}`;
@@ -139,7 +145,7 @@ const Analytics = (() => {
     }
     
     console.log('[Analytics] Enabled');
-    trackEvent('analytics_enabled');
+    sendEvent('analytics_enabled');
   };
 
   // Disable analytics
