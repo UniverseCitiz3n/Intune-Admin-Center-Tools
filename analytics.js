@@ -29,7 +29,7 @@ const Analytics = (() => {
   const MEASUREMENT_PROTOCOL_URL = `https://www.google-analytics.com/mp/collect?measurement_id=${GA_MEASUREMENT_ID}&api_secret=${GA_API_SECRET}`;
   
   let clientId = null;
-  let analyticsEnabled = true; // Default to enabled, user can opt-out
+  let analyticsEnabled = true; // Enabled by default on installation
   let sessionId = null;
 
   // Initialize analytics
@@ -130,7 +130,7 @@ const Analytics = (() => {
   const trackError = (errorType, errorMessage) => {
     sendEvent('error', {
       error_type: errorType,
-      error_message: errorMessage.substring(0, 100) // Limit to 100 chars to avoid PII
+      error_message: errorMessage.substring(0, 100) // Limit message length
     });
   };
 

@@ -3544,8 +3544,8 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // ── Analytics Tracking Wrappers ───────────────────────────────────────
-  // Wrap button handlers with analytics tracking
-  const trackAndHandle = (handler, buttonName) => {
+  // Create wrapper functions that add analytics tracking to button handlers
+  const wrapHandlerWithTracking = (handler, buttonName) => {
     return function(...args) {
       if (typeof Analytics !== 'undefined') {
         Analytics.trackButtonClick(buttonName);
@@ -3554,18 +3554,18 @@ document.addEventListener("DOMContentLoaded", () => {
     };
   };
 
-  document.getElementById("searchGroup").addEventListener("click", trackAndHandle(handleSearchGroup, "search_group"));
-  document.getElementById("addToGroups").addEventListener("click", trackAndHandle(handleAddToGroups, "add_to_groups"));
-  document.getElementById("removeFromGroups").addEventListener("click", trackAndHandle(handleRemoveFromGroups, "remove_from_groups"));
-  document.getElementById("checkGroups").addEventListener("click", trackAndHandle(handleCheckGroups, "check_groups"));
-  document.getElementById("checkGroupMembers").addEventListener("click", trackAndHandle(handleCheckGroupMembers, "check_group_members"));
-  document.getElementById("checkGroupAssignments").addEventListener("click", trackAndHandle(handleCheckGroupAssignments, "check_group_assignments"));
-  document.getElementById("checkCompliance").addEventListener("click", trackAndHandle(handleCheckCompliance, "check_compliance"));
-  document.getElementById("downloadScript").addEventListener("click", trackAndHandle(handleDownloadScript, "download_script"));
-  document.getElementById("appsAssignment").addEventListener("click", trackAndHandle(handleAppsAssignment, "apps_assignment"));
-  document.getElementById("pwshProfiles").addEventListener("click", trackAndHandle(handlePwshProfiles, "pwsh_profiles"));
-  document.getElementById("collectLogs").addEventListener("click", trackAndHandle(handleCollectLogs, "collect_logs"));
-  document.getElementById("createGroup").addEventListener("click", trackAndHandle(handleCreateGroup, "create_group"));
+  document.getElementById("searchGroup").addEventListener("click", wrapHandlerWithTracking(handleSearchGroup, "search_group"));
+  document.getElementById("addToGroups").addEventListener("click", wrapHandlerWithTracking(handleAddToGroups, "add_to_groups"));
+  document.getElementById("removeFromGroups").addEventListener("click", wrapHandlerWithTracking(handleRemoveFromGroups, "remove_from_groups"));
+  document.getElementById("checkGroups").addEventListener("click", wrapHandlerWithTracking(handleCheckGroups, "check_groups"));
+  document.getElementById("checkGroupMembers").addEventListener("click", wrapHandlerWithTracking(handleCheckGroupMembers, "check_group_members"));
+  document.getElementById("checkGroupAssignments").addEventListener("click", wrapHandlerWithTracking(handleCheckGroupAssignments, "check_group_assignments"));
+  document.getElementById("checkCompliance").addEventListener("click", wrapHandlerWithTracking(handleCheckCompliance, "check_compliance"));
+  document.getElementById("downloadScript").addEventListener("click", wrapHandlerWithTracking(handleDownloadScript, "download_script"));
+  document.getElementById("appsAssignment").addEventListener("click", wrapHandlerWithTracking(handleAppsAssignment, "apps_assignment"));
+  document.getElementById("pwshProfiles").addEventListener("click", wrapHandlerWithTracking(handlePwshProfiles, "pwsh_profiles"));
+  document.getElementById("collectLogs").addEventListener("click", wrapHandlerWithTracking(handleCollectLogs, "collect_logs"));
+  document.getElementById("createGroup").addEventListener("click", wrapHandlerWithTracking(handleCreateGroup, "create_group"));
   
   document.getElementById("groupResults").addEventListener("change", (event) => {
     if (event.target.type === "checkbox") {
