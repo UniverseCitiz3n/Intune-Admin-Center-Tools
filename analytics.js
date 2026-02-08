@@ -150,6 +150,10 @@ const Analytics = (() => {
 
   // Disable analytics
   const disable = async () => {
+    // Send event before disabling
+    if (analyticsEnabled && clientId) {
+      await sendEvent('analytics_disabled');
+    }
     analyticsEnabled = false;
     await chrome.storage.local.set({ analyticsEnabled: false });
     console.log('[Analytics] Disabled');

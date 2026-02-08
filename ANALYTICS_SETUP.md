@@ -224,6 +224,9 @@ This implementation is designed to be:
 - Ensure no PII is accidentally included
 - Set up data retention policies in GA4
 
+### Manifest Permissions
+The extension requires the host permission `https://www.google-analytics.com/*` to send analytics data. This grants access to all paths under google-analytics.com. While the code only accesses the `/mp/collect` endpoint, Manifest V3 doesn't support path-specific host permissions. This is a standard requirement for GA4 Measurement Protocol.
+
 ## Support
 
 If you encounter issues with GA4 setup:

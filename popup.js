@@ -3829,17 +3829,20 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     // Analytics toggle handler
-    document.getElementById('analyticsToggleOption')?.addEventListener('click', async (e) => {
-      e.preventDefault();
-      if (Analytics.isEnabled()) {
-        await Analytics.disable();
-        showNotification('Analytics disabled. Usage data will no longer be collected.', 'info');
-      } else {
-        await Analytics.enable();
-        showNotification('Analytics enabled. Anonymous usage data will be collected.', 'success');
-      }
-      updateAnalyticsToggleUI();
-    });
+    const analyticsToggle = document.getElementById('analyticsToggleOption');
+    if (analyticsToggle) {
+      analyticsToggle.addEventListener('click', async (e) => {
+        e.preventDefault();
+        if (Analytics.isEnabled()) {
+          await Analytics.disable();
+          showNotification('Analytics disabled. Usage data will no longer be collected.', 'info');
+        } else {
+          await Analytics.enable();
+          showNotification('Analytics enabled. Anonymous usage data will be collected.', 'success');
+        }
+        updateAnalyticsToggleUI();
+      });
+    }
 
     // Update UI on load
     chrome.storage.local.get(['analyticsEnabled'], (data) => {
