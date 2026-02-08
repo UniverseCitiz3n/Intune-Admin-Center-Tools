@@ -17,9 +17,25 @@ A powerful browser extension that extends Microsoft Intune Admin Center with ess
 - ✅ **Open Source**: All code is public and auditable
 - ⚠️ **Trust but Verify**: Read the code before installing
 - 🔐 **Your Responsibility**: Review permissions and understand what you're running
-- 📖 **Transparency**: No telemetry, no data collection, no external API calls
+- 📊 **Optional Analytics**: Privacy-focused usage tracking (opt-out available, see [ANALYTICS.md](ANALYTICS.md))
 
 This is public software from a developer on the internet. Be cautious and audit before use in production environments.
+
+---
+
+## 📊 Privacy & Analytics
+
+This extension includes **optional, privacy-focused Google Analytics** to understand feature usage. 
+
+**What's tracked:**
+- Button clicks and feature usage (anonymous)
+- Extension version
+- NO personal data, device IDs, usernames, or Microsoft data
+
+**User control:**
+- Analytics enabled by default
+- Can be disabled anytime in Settings menu
+- See [ANALYTICS.md](ANALYTICS.md) for complete details
 
 ---
 
@@ -122,6 +138,7 @@ This is public software from a developer on the internet. Be cautious and audit 
 - **Show Welcome**: Display the welcome notification again
 - **Reset Welcome**: Clear welcome notification state
 - **Clear Storage**: Remove all cached extension data
+- **Analytics Toggle**: Enable or disable anonymous usage tracking (see [ANALYTICS.md](ANALYTICS.md))
 - Version information display
 
 #### Keyboard Shortcuts

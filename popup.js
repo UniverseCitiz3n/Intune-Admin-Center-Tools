@@ -3542,18 +3542,30 @@ document.addEventListener("DOMContentLoaded", () => {
       currentDisplayType: state.currentDisplayType
     });
   });
-  document.getElementById("searchGroup").addEventListener("click", handleSearchGroup);
-  document.getElementById("addToGroups").addEventListener("click", handleAddToGroups);
-  document.getElementById("removeFromGroups").addEventListener("click", handleRemoveFromGroups);
-  document.getElementById("checkGroups").addEventListener("click", handleCheckGroups);
-  document.getElementById("checkGroupMembers").addEventListener("click", handleCheckGroupMembers);
-  document.getElementById("checkGroupAssignments").addEventListener("click", handleCheckGroupAssignments);
-  document.getElementById("checkCompliance").addEventListener("click", handleCheckCompliance);
-  document.getElementById("downloadScript").addEventListener("click", handleDownloadScript);
-  document.getElementById("appsAssignment").addEventListener("click", handleAppsAssignment);
-  document.getElementById("pwshProfiles").addEventListener("click", handlePwshProfiles);
-  document.getElementById("collectLogs").addEventListener("click", handleCollectLogs);
-  document.getElementById("createGroup").addEventListener("click", handleCreateGroup); document.getElementById("groupResults").addEventListener("change", (event) => {
+
+  // ── Analytics Tracking Wrappers ───────────────────────────────────────
+  // Wrap button handlers with analytics tracking
+  const trackAndHandle = (handler, buttonName) => {
+    return function(...args) {
+      if (typeof Analytics !== 'undefined') {
+        Analytics.trackButtonClick(buttonName);
+      }
+      return handler.apply(this, args);
+    };
+  };
+
+  document.getElementById("searchGroup").addEventListener("click", trackAndHandle(handleSearchGroup, "search_group"));
+  document.getElementById("addToGroups").addEventListener("click", trackAndHandle(handleAddToGroups, "add_to_groups"));
+  document.getElementById("removeFromGroups").addEventListener("click", trackAndHandle(handleRemoveFromGroups, "remove_from_groups"));
+  document.getElementById("checkGroups").addEventListener("click", trackAndHandle(handleCheckGroups, "check_groups"));
+  document.getElementById("checkGroupMembers").addEventListener("click", trackAndHandle(handleCheckGroupMembers, "check_group_members"));
+  document.getElementById("checkGroupAssignments").addEventListener("click", trackAndHandle(handleCheckGroupAssignments, "check_group_assignments"));
+  document.getElementById("checkCompliance").addEventListener("click", trackAndHandle(handleCheckCompliance, "check_compliance"));
+  document.getElementById("downloadScript").addEventListener("click", trackAndHandle(handleDownloadScript, "download_script"));
+  document.getElementById("appsAssignment").addEventListener("click", trackAndHandle(handleAppsAssignment, "apps_assignment"));
+  document.getElementById("pwshProfiles").addEventListener("click", trackAndHandle(handlePwshProfiles, "pwsh_profiles"));
+  document.getElementById("collectLogs").addEventListener("click", trackAndHandle(handleCollectLogs, "collect_logs"));
+  document.getElementById("createGroup").addEventListener("click", trackAndHandle(handleCreateGroup, "create_group")); document.getElementById("groupResults").addEventListener("change", (event) => {
     if (event.target.type === "checkbox") {
       // Clear table selections when selecting checkboxes
       clearTableSelection();
@@ -3605,7 +3617,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
   // Theme toggle button
-  document.getElementById("theme-toggle").addEventListener("click", toggleTheme);
+  document.getElementById("theme-toggle").addEventListener("click", () => {
+    toggleTheme();
+    if (typeof Analytics !== 'undefined') {
+      Analytics.trackButtonClick("theme_toggle");
+    }
+  });
 
   // Settings menu functionality
   const settingsButton = document.getElementById("settingsButton");
@@ -3717,6 +3734,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // Export CSV button event listener
   document.getElementById("exportCsvBtn").addEventListener("click", () => {
     exportTableToCsv();
+    if (typeof Analytics !== 'undefined') {
+      Analytics.trackFeatureUsage("export_csv", { display_type: state.currentDisplayType });
+    }
   });
 
   // Keyboard navigation for pagination
@@ -3740,8 +3760,18 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Target mode toggle buttons
-  document.getElementById("deviceModeBtn").addEventListener("click", () => handleTargetModeToggle('device'));
-  document.getElementById("userModeBtn").addEventListener("click", () => handleTargetModeToggle('user'));
+  document.getElementById("deviceModeBtn").addEventListener("click", () => {
+    handleTargetModeToggle('device');
+    if (typeof Analytics !== 'undefined') {
+      Analytics.trackFeatureUsage("toggle_target_mode", { mode: "device" });
+    }
+  });
+  document.getElementById("userModeBtn").addEventListener("click", () => {
+    handleTargetModeToggle('user');
+    if (typeof Analytics !== 'undefined') {
+      Analytics.trackFeatureUsage("toggle_target_mode", { mode: "user" });
+    }
+  });
 
   // ── Welcome Notification Management ───────────────────────────────────
   // Add keyboard shortcut to show welcome notification (Ctrl+Shift+W)
@@ -3779,5 +3809,39 @@ document.addEventListener("DOMContentLoaded", () => {
   const versionElement = document.getElementById('extensionVersion');
   if (versionElement && chrome.runtime && chrome.runtime.getManifest) {
     versionElement.textContent = chrome.runtime.getManifest().version;
+  }
+
+  // ── Analytics Initialization ──────────────────────────────────────────
+  // Initialize analytics when popup opens
+  if (typeof Analytics !== 'undefined') {
+    Analytics.init().then(() => {
+      Analytics.trackPageView('popup');
+    });
+
+    // Update analytics toggle UI based on current state
+    const updateAnalyticsToggleUI = () => {
+      const toggleText = document.getElementById('analyticsToggleText');
+      if (toggleText) {
+        toggleText.textContent = Analytics.isEnabled() ? 'Analytics: Enabled' : 'Analytics: Disabled';
+      }
+    };
+
+    // Analytics toggle handler
+    document.getElementById('analyticsToggleOption')?.addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (Analytics.isEnabled()) {
+        await Analytics.disable();
+        showNotification('Analytics disabled. Usage data will no longer be collected.', 'info');
+      } else {
+        await Analytics.enable();
+        showNotification('Analytics enabled. Anonymous usage data will be collected.', 'success');
+      }
+      updateAnalyticsToggleUI();
+    });
+
+    // Update UI on load
+    chrome.storage.local.get(['analyticsEnabled'], (data) => {
+      updateAnalyticsToggleUI();
+    });
   }
 });

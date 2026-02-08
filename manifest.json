@@ -16,7 +16,8 @@
     },
     "host_permissions": [
         "*://graph.microsoft.com/*",
-        "https://intune.microsoft.com/*"
+        "https://intune.microsoft.com/*",
+        "https://www.google-analytics.com/*"
     ],
     "background": {
         "service_worker": "background.js"
@@ -35,5 +36,11 @@
     "action": {
         "default_popup": "popup.html",
         "default_title": "Intune Admin Center Tools"
-    }
+    },
+    "web_accessible_resources": [
+        {
+            "resources": ["analytics.js"],
+            "matches": ["<all_urls>"]
+        }
+    ]
 }
