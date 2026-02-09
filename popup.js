@@ -2063,6 +2063,442 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
+  // ══════════════════════════════════════════════════════════════
+  // Bulk Add Members Feature
+  // ══════════════════════════════════════════════════════════════
+
+  // State for bulk add modal
+  const bulkAddState = {
+    selectedGroupId: null,
+    selectedGroupName: null,
+    parsedItems: []
+  };
+
+  // Show the bulk add modal
+  const showBulkAddModal = () => {
+    const modal = document.getElementById('bulkAddModal');
+    modal.style.display = 'flex';
+
+    // Reset modal sections
+    document.getElementById('bulkAddInputSection').style.display = 'block';
+    document.getElementById('bulkAddProgressSection').style.display = 'none';
+    document.getElementById('bulkAddResultsSection').style.display = 'none';
+
+    // Reset input
+    document.getElementById('bulkAddInput').value = '';
+    document.getElementById('bulkAddParsedCount').textContent = '';
+    document.getElementById('confirmBulkAddBtn').disabled = true;
+  };
+
+  // Hide the bulk add modal and reset state
+  const hideBulkAddModal = () => {
+    const modal = document.getElementById('bulkAddModal');
+    modal.style.display = 'none';
+
+    bulkAddState.selectedGroupId = null;
+    bulkAddState.selectedGroupName = null;
+    bulkAddState.parsedItems = [];
+  };
+
+  // Parse bulk input text into an array of items
+  const parseBulkInput = (text) => {
+    if (!text || !text.trim()) return [];
+
+    text = text.trim();
+
+    // Try JSON array: ["a","b","c"] or [{"k":"v"}]
+    if (text.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) {
+          // Flatten objects: extract string values from each element
+          const items = [];
+          for (const item of parsed) {
+            if (typeof item === 'string' && item.trim()) {
+              items.push(item.trim());
+            } else if (typeof item === 'object' && item !== null) {
+              for (const val of Object.values(item)) {
+                if (typeof val === 'string' && val.trim()) {
+                  items.push(val.trim());
+                }
+              }
+            }
+          }
+          if (items.length > 0) return [...new Set(items)];
+        }
+      } catch (e) {
+        // Not valid JSON, continue to other parsers
+      }
+    }
+
+    // Try JSON object / hashtable: {"k":"v"}
+    // Note: PowerShell @{k="v"} syntax is not JSON-compatible and will fall through to line-based parsing
+    let objectText = text;
+    if (objectText.startsWith('@{') && objectText.endsWith('}')) {
+      objectText = objectText.slice(1); // Remove leading @ to try as JSON
+    }
+    if (objectText.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(objectText);
+        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+          const items = [];
+          for (const val of Object.values(parsed)) {
+            if (typeof val === 'string' && val.trim()) {
+              items.push(val.trim());
+            }
+          }
+          if (items.length > 0) return [...new Set(items)];
+        }
+      } catch (e) {
+        // Not valid JSON object, continue
+      }
+    }
+
+    // Split by newlines first
+    let lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+
+    // If single line, try splitting by delimiters (comma, semicolon, tab, pipe)
+    if (lines.length === 1) {
+      const delimited = lines[0].split(/[,;\t|]+/).map(s => s.trim()).filter(s => s.length > 0);
+      if (delimited.length > 1) {
+        return [...new Set(delimited)];
+      }
+    }
+
+    // Multi-line: each line may itself be delimited
+    const items = [];
+    for (const line of lines) {
+      const parts = line.split(/[,;\t|]+/).map(s => s.trim()).filter(s => s.length > 0);
+      items.push(...parts);
+    }
+
+    return [...new Set(items)];
+  };
+
+  // Resolve a single item to a directory object ID
+  const resolveItemToDirectoryId = async (item, token) => {
+    const headers = { "Authorization": token, "Content-Type": "application/json" };
+    // Escape single quotes for OData filter values
+    const escapedItem = item.replace(/'/g, "''");
+
+    // Check if item looks like a GUID
+    const guidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (guidPattern.test(item)) {
+      // Try as directory object ID directly
+      try {
+        const obj = await fetchJSON(`https://graph.microsoft.com/v1.0/directoryObjects/${item}`, {
+          method: "GET", headers
+        });
+        if (obj && obj.id) {
+          return { id: obj.id, displayName: obj.displayName || item, type: obj['@odata.type'] || 'directoryObject' };
+        }
+      } catch (e) {
+        // Not a direct object ID, continue
+      }
+    }
+
+    // Check if item looks like a UPN (contains @)
+    if (item.includes('@')) {
+      try {
+        const userData = await fetchJSON(`https://graph.microsoft.com/v1.0/users?$filter=userPrincipalName eq '${encodeURIComponent(escapedItem)}'&$select=id,displayName,userPrincipalName`, {
+          method: "GET", headers
+        });
+        if (userData.value && userData.value.length > 0) {
+          return { id: userData.value[0].id, displayName: userData.value[0].displayName || item, type: 'user' };
+        }
+      } catch (e) {
+        // Continue to next strategy
+      }
+    }
+
+    // Try as device displayName
+    try {
+      const deviceData = await fetchJSON(`https://graph.microsoft.com/v1.0/devices?$filter=displayName eq '${encodeURIComponent(escapedItem)}'&$select=id,displayName`, {
+        method: "GET", headers
+      });
+      if (deviceData.value && deviceData.value.length > 0) {
+        return { id: deviceData.value[0].id, displayName: deviceData.value[0].displayName || item, type: 'device' };
+      }
+    } catch (e) {
+      // Continue
+    }
+
+    // Try as user displayName
+    try {
+      const userData = await fetchJSON(`https://graph.microsoft.com/v1.0/users?$filter=displayName eq '${encodeURIComponent(escapedItem)}'&$select=id,displayName,userPrincipalName`, {
+        method: "GET", headers
+      });
+      if (userData.value && userData.value.length > 0) {
+        return { id: userData.value[0].id, displayName: userData.value[0].displayName || item, type: 'user' };
+      }
+    } catch (e) {
+      // Continue
+    }
+
+    return null;
+  };
+
+  // Add members to group using Graph API batch requests
+  const addMembersToGroup = async (groupId, memberIds, token) => {
+    const results = {
+      total: memberIds.length,
+      added: 0,
+      failed: 0,
+      failures: []
+    };
+
+    const batchSize = 20;
+
+    for (let i = 0; i < memberIds.length; i += batchSize) {
+      const batch = memberIds.slice(i, i + batchSize);
+
+      const progress = Math.min(100, Math.round(((i + batch.length) / memberIds.length) * 100));
+      document.getElementById('bulkAddProgressBar').style.width = `${progress}%`;
+      document.getElementById('bulkAddProgressDetails').textContent =
+        `Processing ${Math.min(i + batch.length, memberIds.length)} of ${memberIds.length}...`;
+
+      try {
+        const idMapping = {};
+        const batchRequests = batch.map((member, index) => {
+          const requestId = `${i + index}`;
+          idMapping[requestId] = member;
+          return {
+            id: requestId,
+            method: 'POST',
+            url: `/groups/${groupId}/members/$ref`,
+            headers: { 'Content-Type': 'application/json' },
+            body: {
+              '@odata.id': `https://graph.microsoft.com/v1.0/directoryObjects/${member.id}`
+            }
+          };
+        });
+
+        const batchResponse = await fetchJSON('https://graph.microsoft.com/v1.0/$batch', {
+          method: 'POST',
+          headers: {
+            'Authorization': token,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ requests: batchRequests })
+        });
+
+        if (batchResponse.responses) {
+          for (const response of batchResponse.responses) {
+            if (response.status === 204 || response.status === 200 || response.status === 201) {
+              results.added++;
+            } else {
+              results.failed++;
+              const member = idMapping[response.id];
+              results.failures.push({
+                memberName: member ? member.displayName : 'Unknown',
+                reason: response.body?.error?.message || `HTTP ${response.status}`
+              });
+            }
+          }
+        }
+      } catch (batchError) {
+        logMessage(`Bulk add batch failed, falling back to individual requests: ${batchError.message}`);
+
+        for (const member of batch) {
+          try {
+            await fetchJSON(`https://graph.microsoft.com/v1.0/groups/${groupId}/members/$ref`, {
+              method: 'POST',
+              headers: { 'Authorization': token, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                '@odata.id': `https://graph.microsoft.com/v1.0/directoryObjects/${member.id}`
+              })
+            });
+            results.added++;
+          } catch (e) {
+            results.failed++;
+            results.failures.push({
+              memberName: member.displayName || 'Unknown',
+              reason: e.message
+            });
+          }
+        }
+      }
+    }
+
+    document.getElementById('bulkAddProgressBar').style.width = '100%';
+    return results;
+  };
+
+  // Show bulk add results
+  const showBulkAddResults = (results) => {
+    document.getElementById('bulkAddProgressSection').style.display = 'none';
+    document.getElementById('bulkAddResultsSection').style.display = 'block';
+
+    let summaryMsg = '';
+    if (results.added === results.total) {
+      summaryMsg = `✓ Successfully added all ${results.added} member${results.added !== 1 ? 's' : ''}.`;
+    } else if (results.added > 0) {
+      summaryMsg = `⚠ Partially completed: ${results.added} added, ${results.failed} failed.`;
+    } else {
+      summaryMsg = `✗ Failed to add members.`;
+    }
+
+    document.getElementById('bulkAddResultsSummary').textContent = summaryMsg;
+
+    const detailsDiv = document.getElementById('bulkAddResultsDetails');
+    detailsDiv.innerHTML = '';
+
+    if (results.failures && results.failures.length > 0) {
+      results.failures.forEach(failure => {
+        const failureItem = document.createElement('div');
+        failureItem.className = 'failure-item';
+
+        const nameStrong = document.createElement('strong');
+        nameStrong.textContent = failure.memberName;
+        failureItem.appendChild(nameStrong);
+        failureItem.appendChild(document.createElement('br'));
+
+        const reasonSmall = document.createElement('small');
+        reasonSmall.textContent = `Reason: ${failure.reason}`;
+        failureItem.appendChild(reasonSmall);
+
+        detailsDiv.appendChild(failureItem);
+      });
+    }
+  };
+
+  // Execute the bulk add
+  const executeBulkAdd = async () => {
+    document.getElementById('bulkAddInputSection').style.display = 'none';
+    document.getElementById('bulkAddProgressSection').style.display = 'block';
+
+    const items = bulkAddState.parsedItems;
+    document.getElementById('bulkAddProgressMessage').textContent =
+      `Resolving ${items.length} item${items.length !== 1 ? 's' : ''}...`;
+    document.getElementById('bulkAddProgressBar').style.width = '0%';
+    document.getElementById('bulkAddProgressDetails').textContent = 'Resolving identities...';
+
+    try {
+      const token = await getToken();
+
+      // Resolve items to directory object IDs
+      const resolved = [];
+      const unresolved = [];
+
+      for (let i = 0; i < items.length; i++) {
+        const progress = Math.round(((i + 1) / items.length) * 50); // First 50% for resolution
+        document.getElementById('bulkAddProgressBar').style.width = `${progress}%`;
+        document.getElementById('bulkAddProgressDetails').textContent =
+          `Resolving ${i + 1} of ${items.length}: ${items[i]}`;
+
+        const result = await resolveItemToDirectoryId(items[i], token);
+        if (result) {
+          resolved.push(result);
+        } else {
+          unresolved.push(items[i]);
+        }
+      }
+
+      if (resolved.length === 0) {
+        showBulkAddResults({
+          total: items.length,
+          added: 0,
+          failed: items.length,
+          failures: unresolved.map(item => ({
+            memberName: item,
+            reason: 'Could not resolve to a user or device'
+          }))
+        });
+        return;
+      }
+
+      // Add resolved members to the group
+      document.getElementById('bulkAddProgressMessage').textContent =
+        `Adding ${resolved.length} member${resolved.length !== 1 ? 's' : ''} to group...`;
+      document.getElementById('bulkAddProgressBar').style.width = '50%';
+
+      const results = await addMembersToGroup(
+        bulkAddState.selectedGroupId,
+        resolved,
+        token
+      );
+
+      // Append unresolved items to failures (total starts at resolved.length, add unresolved)
+      results.total += unresolved.length;
+      results.failed += unresolved.length;
+      unresolved.forEach(item => {
+        results.failures.push({
+          memberName: item,
+          reason: 'Could not resolve to a user or device'
+        });
+      });
+
+      showBulkAddResults(results);
+
+      // Refresh group members display if applicable
+      if (state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup &&
+          state.lastCheckedGroup.groupId === bulkAddState.selectedGroupId) {
+        const { members, totalCount } = await fetchAllGroupMembers(
+          bulkAddState.selectedGroupId,
+          token
+        );
+        chrome.storage.local.set({ lastGroupMembers: members });
+        updateGroupMembersTable(members);
+
+        const displayText = `- ${bulkAddState.selectedGroupName} (${totalCount} members)`;
+        document.getElementById('deviceNameDisplay').textContent = displayText;
+      }
+
+    } catch (error) {
+      logMessage(`Bulk add error: ${error.message}`);
+      showBulkAddResults({
+        total: items.length,
+        added: 0,
+        failed: items.length,
+        failures: [{
+          memberName: 'N/A',
+          reason: error.message
+        }]
+      });
+    }
+  };
+
+  // Handle Bulk Add Members button click
+  const handleBulkAddMembers = async () => {
+    logMessage("bulkAddMembers clicked");
+
+    // Determine the target group
+    let groupId, groupName;
+
+    if (state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup) {
+      groupId = state.lastCheckedGroup.groupId;
+      groupName = state.lastCheckedGroup.groupName;
+      logMessage(`bulkAddMembers: Using cached group - ID: ${groupId}, Name: ${groupName}`);
+    } else {
+      const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
+      if (selected.length !== 1) {
+        showResultNotification('Select exactly one group to add members to.', 'error');
+        return;
+      }
+      groupId = selected[0].value;
+      groupName = selected[0].dataset.groupName;
+      logMessage(`bulkAddMembers: Using selected group - ID: ${groupId}, Name: ${groupName}`);
+    }
+
+    if (isDynamicGroup(groupId)) {
+      showResultNotification(
+        'Cannot add members to dynamic groups. Dynamic membership is managed by Azure AD rules.',
+        'error'
+      );
+      return;
+    }
+
+    bulkAddState.selectedGroupId = groupId;
+    bulkAddState.selectedGroupName = groupName;
+
+    document.getElementById('bulkAddGroupName').textContent = `Group: ${groupName}`;
+    showBulkAddModal();
+  };
+
+  // ══════════════════════════════════════════════════════════════
+  // End of Bulk Add Members Feature
+  // ══════════════════════════════════════════════════════════════
+
   // Handle Checking Group Assignments in Configurations
   const handleCheckGroupAssignments = async () => {
     logMessage("checkGroupAssignments clicked");
@@ -3547,6 +3983,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("removeFromGroups").addEventListener("click", handleRemoveFromGroups);
   document.getElementById("checkGroups").addEventListener("click", handleCheckGroups);
   document.getElementById("checkGroupMembers").addEventListener("click", handleCheckGroupMembers);
+  document.getElementById("bulkAddMembers").addEventListener("click", handleBulkAddMembers);
   document.getElementById("checkGroupAssignments").addEventListener("click", handleCheckGroupAssignments);
   document.getElementById("checkCompliance").addEventListener("click", handleCheckCompliance);
   document.getElementById("downloadScript").addEventListener("click", handleDownloadScript);
@@ -3604,6 +4041,30 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
   });
+
+  // Bulk Add Modal event listeners
+  document.getElementById("bulkAddModalClose").addEventListener("click", hideBulkAddModal);
+  document.getElementById("bulkAddInput").addEventListener("input", (e) => {
+    const parsed = parseBulkInput(e.target.value);
+    bulkAddState.parsedItems = parsed;
+    const count = parsed.length;
+    document.getElementById('bulkAddParsedCount').textContent =
+      count > 0 ? `✓ ${count} unique item${count !== 1 ? 's' : ''} parsed` : '';
+    document.getElementById('confirmBulkAddBtn').disabled = count === 0;
+  });
+  document.getElementById("confirmBulkAddBtn").addEventListener("click", async () => {
+    await executeBulkAdd();
+  });
+  document.getElementById("cancelBulkAddBtn").addEventListener("click", hideBulkAddModal);
+  document.getElementById("closeBulkAddResultsBtn").addEventListener("click", hideBulkAddModal);
+
+  // Close bulk add modal when clicking outside
+  document.getElementById('bulkAddModal').addEventListener('click', (e) => {
+    if (e.target.id === 'bulkAddModal') {
+      hideBulkAddModal();
+    }
+  });
+
   // Theme toggle button
   document.getElementById("theme-toggle").addEventListener("click", toggleTheme);
 
