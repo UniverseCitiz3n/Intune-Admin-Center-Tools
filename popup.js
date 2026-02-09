@@ -2429,8 +2429,9 @@ document.addEventListener("DOMContentLoaded", () => {
         token
       );
 
-      // Append unresolved items to failures (total starts at resolved.length, add unresolved)
-      results.total += unresolved.length;
+      // Adjust results to include unresolved items in the totals
+      // addMembersToGroup sets total to resolved.length, we need to add unresolved count
+      results.total = items.length; // Set to original input count
       results.failed += unresolved.length;
       unresolved.forEach(item => {
         results.failures.push({
