@@ -2067,6 +2067,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // Bulk Add Members Feature
   // ══════════════════════════════════════════════════════════════
 
+  // Configuration
+  const GRAPH_API_BATCH_SIZE = 20; // Microsoft Graph API batch request limit
+
   // State for bulk add modal
   const bulkAddState = {
     selectedGroupId: null,
@@ -2200,7 +2203,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Check if item looks like a UPN (contains @)
     if (item.includes('@')) {
       try {
-        const userData = await fetchJSON(`https://graph.microsoft.com/v1.0/users?$filter=userPrincipalName eq '${encodeURIComponent(escapedItem)}'&$select=id,displayName,userPrincipalName`, {
+        const userData = await fetchJSON(`https://graph.microsoft.com/v1.0/users?$filter=userPrincipalName eq '${escapedItem}'&$select=id,displayName,userPrincipalName`, {
           method: "GET", headers
         });
         if (userData.value && userData.value.length > 0) {
@@ -2213,7 +2216,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Try as device displayName
     try {
-      const deviceData = await fetchJSON(`https://graph.microsoft.com/v1.0/devices?$filter=displayName eq '${encodeURIComponent(escapedItem)}'&$select=id,displayName`, {
+      const deviceData = await fetchJSON(`https://graph.microsoft.com/v1.0/devices?$filter=displayName eq '${escapedItem}'&$select=id,displayName`, {
         method: "GET", headers
       });
       if (deviceData.value && deviceData.value.length > 0) {
@@ -2229,7 +2232,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Try as user displayName
     try {
-      const userData = await fetchJSON(`https://graph.microsoft.com/v1.0/users?$filter=displayName eq '${encodeURIComponent(escapedItem)}'&$select=id,displayName,userPrincipalName`, {
+      const userData = await fetchJSON(`https://graph.microsoft.com/v1.0/users?$filter=displayName eq '${escapedItem}'&$select=id,displayName,userPrincipalName`, {
         method: "GET", headers
       });
       if (userData.value && userData.value.length > 0) {
@@ -2255,7 +2258,7 @@ document.addEventListener("DOMContentLoaded", () => {
       failures: []
     };
 
-    const batchSize = 20;
+    const batchSize = GRAPH_API_BATCH_SIZE;
 
     for (let i = 0; i < memberIds.length; i += batchSize) {
       const batch = memberIds.slice(i, i + batchSize);
