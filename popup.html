@@ -146,17 +146,17 @@
                 <i class="material-icons">group_remove</i>
                 <span id="removeBtnText">Remove</span>
               </a>
-              <a id="checkGroupMembers" class="btn-modern" role="button">
-                <i class="material-icons">people_outline</i>
-                <span>Check Members</span>
-              </a>
-              <a id="clearGroupMembers" class="btn-modern" role="button">
-                <i class="material-icons">clear_all</i>
-                <span>Clear Members</span>
-              </a>
-              <a id="bulkAddMembers" class="btn-modern full-width" role="button">
+              <a id="bulkAddMembers" class="btn-modern" role="button">
                 <i class="material-icons">playlist_add</i>
                 <span>Bulk Add</span>
+              </a>
+              <a id="clearGroupMembers" class="btn-modern" role="button">
+                <i class="material-icons">playlist_remove</i>
+                <span>Bulk Remove</span>
+              </a>
+              <a id="checkGroupMembers" class="btn-modern full-width" role="button">
+                <i class="material-icons">people_outline</i>
+                <span>Check Members</span>
               </a>
             </div>
           </div>
@@ -206,11 +206,11 @@
     </div>
   </div>
 
-  <!-- Clear Members Modal Dialog -->
+  <!-- Bulk Remove Modal Dialog -->
   <div id="clearMembersModal" class="modal-overlay" style="display: none;">
     <div class="modal-dialog">
       <div class="modal-header">
-        <h6>Clear Group Members</h6>
+        <h6>Bulk Remove Group Members</h6>
         <button class="modal-close" id="clearMembersModalClose">
           <i class="material-icons">close</i>
         </button>

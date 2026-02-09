@@ -11,7 +11,7 @@ const WELCOME_CONTENT = {
     title: 'Welcome to Intune Admin Center Tools v1.5.0!',
     intro: `This major release introduces powerful group member management capabilities and enhanced information display for better administration.`,
     changelog: [
-      'NEW: Clear Members - Remove members from groups (selected or all)',
+      'NEW: Bulk Remove - Remove members from groups (selected or all)',
       'NEW: Enhanced Check Members with exact counts for large groups (1000+)',
       'NEW: Group type indicator (Assigned/Dynamic)',
       'NEW: Dynamic membership rule display in collapsible section',
@@ -23,7 +23,7 @@ const WELCOME_CONTENT = {
       'Search and manage Azure AD groups',
       'Check device/user configuration assignments',
       'Manage group memberships (add/remove devices and users)',
-      'Clear group members (NEW) - Remove selected or all members',
+      'Bulk remove (NEW) - Remove selected or all members',
       'Check group members with enhanced details (NEW)',
       'View exact member counts for large groups (NEW)',
       'See group type and dynamic rules (NEW)',
@@ -39,7 +39,7 @@ const WELCOME_CONTENT = {
       'The extension works on any Intune Admin Center page',
       'Switch between Device and User modes using the toggle buttons',
       'Click on rows in the group members table to select specific members',
-      'Use the "Clear Members" button to remove members from assigned groups',
+      'Use the "Bulk Remove" button to remove members from assigned groups',
       'For dynamic groups, expand the membership rule to see the query',
       'Filter results using the search boxes for better navigation',
       'Click the download icon in the pagination area to export the table to CSV'

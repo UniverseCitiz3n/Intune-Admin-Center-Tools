@@ -2160,10 +2160,10 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   // ══════════════════════════════════════════════════════════════
-  // Clear Group Members Feature
+  // Bulk Remove Feature
   // ══════════════════════════════════════════════════════════════
 
-  // State for clear members modal
+  // State for bulk remove modal
   const clearMembersState = {
     selectedGroupId: null,
     selectedGroupName: null,
@@ -2177,7 +2177,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-  // Show the clear members modal
+  // Show the bulk remove modal
   const showClearMembersModal = () => {
     const modal = document.getElementById('clearMembersModal');
     modal.style.display = 'flex';
@@ -2199,7 +2199,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById('typedConfirmSection').style.display = 'none';
   };
 
-  // Hide the clear members modal and reset state
+  // Hide the bulk remove modal and reset state
   const hideClearMembersModal = () => {
     const modal = document.getElementById('clearMembersModal');
     modal.style.display = 'none';
@@ -2559,7 +2559,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-  // Handle Clear Group Members button click
+  // Handle Bulk Remove button click
   const handleClearGroupMembers = async () => {
     logMessage("clearGroupMembers clicked");
     
@@ -2586,7 +2586,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Check if group is dynamic
     if (isDynamicGroup(groupId)) {
       showResultNotification(
-        'Cannot clear members from dynamic groups. Dynamic membership is managed by Azure AD rules.',
+        'Cannot bulk remove members from dynamic groups. Dynamic membership is managed by Azure AD rules.',
         'error'
       );
       return;
@@ -2683,7 +2683,7 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   // ══════════════════════════════════════════════════════════════
-  // End of Clear Group Members Feature
+  // End of Bulk Remove Feature
   // ══════════════════════════════════════════════════════════════
 
   // ══════════════════════════════════════════════════════════════
@@ -4793,7 +4793,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("collectLogs").addEventListener("click", handleCollectLogs);
   document.getElementById("createGroup").addEventListener("click", handleCreateGroup);
   
-  // Clear Members Modal Event Listeners
+  // Bulk Remove Modal Event Listeners
   document.getElementById("clearMembersModalClose").addEventListener("click", hideClearMembersModal);
   document.getElementById("clearSelectedMembersBtn").addEventListener("click", () => {
     showConfirmationSection('selected');
