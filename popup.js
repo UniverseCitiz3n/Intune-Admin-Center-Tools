@@ -2217,7 +2217,11 @@ document.addEventListener("DOMContentLoaded", () => {
         method: "GET", headers
       });
       if (deviceData.value && deviceData.value.length > 0) {
-        return { id: deviceData.value[0].id, displayName: deviceData.value[0].displayName || item, type: 'device' };
+        // If multiple devices with same name, log a warning and use the first one
+        if (deviceData.value.length > 1) {
+          logMessage(`Warning: Multiple devices (${deviceData.value.length}) found with name "${item}". Using first match: ${deviceData.value[0].id}`);
+        }
+        return { id: deviceData.value[0].id, displayName: deviceData.value[0].displayName || item, type: 'device', multipleMatches: deviceData.value.length > 1 };
       }
     } catch (e) {
       // Continue
@@ -2229,7 +2233,11 @@ document.addEventListener("DOMContentLoaded", () => {
         method: "GET", headers
       });
       if (userData.value && userData.value.length > 0) {
-        return { id: userData.value[0].id, displayName: userData.value[0].displayName || item, type: 'user' };
+        // If multiple users with same name, log a warning and use the first one
+        if (userData.value.length > 1) {
+          logMessage(`Warning: Multiple users (${userData.value.length}) found with name "${item}". Using first match: ${userData.value[0].id}`);
+        }
+        return { id: userData.value[0].id, displayName: userData.value[0].displayName || item, type: 'user', multipleMatches: userData.value.length > 1 };
       }
     } catch (e) {
       // Continue

@@ -208,6 +208,9 @@
             <li>Comma, semicolon, or tab delimited values</li>
             <li>JSON array: <code>["value1","value2"]</code></li>
           </ul>
+          <p class="modal-description" style="font-size: 0.85rem; opacity: 0.8; margin-top: 8px;">
+            <strong>Note:</strong> If multiple devices/users share the same name, the first match will be used. Use unique identifiers (GUIDs or UPNs) for precise matching.
+          </p>
           <textarea id="bulkAddInput" class="bulk-add-textarea" 
                     placeholder="Paste your data here...&#10;&#10;Examples:&#10;device1&#10;device2&#10;&#10;or: user1@domain.com, user2@domain.com&#10;&#10;or: [&quot;value1&quot;,&quot;value2&quot;]" rows="10"></textarea>
           <p id="bulkAddParsedCount" class="bulk-add-parsed-count"></p>
