@@ -24,8 +24,8 @@
 const Analytics = (() => {
   // GA4 Configuration - REPLACE THESE VALUES WITH YOUR ACTUAL CREDENTIALS
   // These are PLACEHOLDERS and will not send data until configured
-  const GA_MEASUREMENT_ID = 'G-XXXXXXXXXX'; // Replace with actual GA4 Measurement ID
-  const GA_API_SECRET = 'XXXXXXXXXXXXXXXXXXXX'; // Replace with actual API Secret
+  const GA_MEASUREMENT_ID = 'XXXXXXXXXXXXXX'; // Replace with actual GA4 Measurement ID
+  const GA_API_SECRET = 'XXXXXXXXXXXXXX'; // Replace with actual API Secret
   const MEASUREMENT_PROTOCOL_URL = `https://www.google-analytics.com/mp/collect?measurement_id=${GA_MEASUREMENT_ID}&api_secret=${GA_API_SECRET}`;
   
   let clientId = null;

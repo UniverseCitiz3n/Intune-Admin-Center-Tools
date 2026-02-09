@@ -3543,29 +3543,40 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // ── Analytics Tracking Wrappers ───────────────────────────────────────
-  // Create wrapper functions that add analytics tracking to button handlers
-  const wrapHandlerWithTracking = (handler, buttonName) => {
-    return function(...args) {
-      if (typeof Analytics !== 'undefined') {
-        Analytics.trackButtonClick(buttonName);
+  // ── Analytics Tracking (Event Delegation) ─────────────────────────────
+  // Automatically tracks clicks on any element with an id attribute.
+  // New buttons are tracked by default — no extra code needed.
+  // PRIVACY: Filters out sensitive IDs that contain group IDs or other PII
+  document.addEventListener("click", (e) => {
+    if (typeof Analytics === 'undefined') return;
+    const target = e.target.closest("[id]");
+    if (target) {
+      // Never track IDs that contain sensitive data like group IDs (UUID patterns)
+      // Group IDs follow the pattern: 00000000-0000-0000-0000-000000000000
+      const hasUuidPattern = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(target.id);
+      
+      if (!hasUuidPattern) {
+        // Safe to track - no sensitive data
+        Analytics.trackButtonClick(target.id);
+      } else {
+        // Skip tracking for sensitive IDs; log for debugging
+        console.log('[Analytics] Skipped tracking for element with sensitive ID:', target.id.substring(0, 20) + '...');
       }
-      return handler.apply(this, args);
-    };
-  };
+    }
+  });
 
-  document.getElementById("searchGroup").addEventListener("click", wrapHandlerWithTracking(handleSearchGroup, "search_group"));
-  document.getElementById("addToGroups").addEventListener("click", wrapHandlerWithTracking(handleAddToGroups, "add_to_groups"));
-  document.getElementById("removeFromGroups").addEventListener("click", wrapHandlerWithTracking(handleRemoveFromGroups, "remove_from_groups"));
-  document.getElementById("checkGroups").addEventListener("click", wrapHandlerWithTracking(handleCheckGroups, "check_groups"));
-  document.getElementById("checkGroupMembers").addEventListener("click", wrapHandlerWithTracking(handleCheckGroupMembers, "check_group_members"));
-  document.getElementById("checkGroupAssignments").addEventListener("click", wrapHandlerWithTracking(handleCheckGroupAssignments, "check_group_assignments"));
-  document.getElementById("checkCompliance").addEventListener("click", wrapHandlerWithTracking(handleCheckCompliance, "check_compliance"));
-  document.getElementById("downloadScript").addEventListener("click", wrapHandlerWithTracking(handleDownloadScript, "download_script"));
-  document.getElementById("appsAssignment").addEventListener("click", wrapHandlerWithTracking(handleAppsAssignment, "apps_assignment"));
-  document.getElementById("pwshProfiles").addEventListener("click", wrapHandlerWithTracking(handlePwshProfiles, "pwsh_profiles"));
-  document.getElementById("collectLogs").addEventListener("click", wrapHandlerWithTracking(handleCollectLogs, "collect_logs"));
-  document.getElementById("createGroup").addEventListener("click", wrapHandlerWithTracking(handleCreateGroup, "create_group"));
+  document.getElementById("searchGroup").addEventListener("click", handleSearchGroup);
+  document.getElementById("addToGroups").addEventListener("click", handleAddToGroups);
+  document.getElementById("removeFromGroups").addEventListener("click", handleRemoveFromGroups);
+  document.getElementById("checkGroups").addEventListener("click", handleCheckGroups);
+  document.getElementById("checkGroupMembers").addEventListener("click", handleCheckGroupMembers);
+  document.getElementById("checkGroupAssignments").addEventListener("click", handleCheckGroupAssignments);
+  document.getElementById("checkCompliance").addEventListener("click", handleCheckCompliance);
+  document.getElementById("downloadScript").addEventListener("click", handleDownloadScript);
+  document.getElementById("appsAssignment").addEventListener("click", handleAppsAssignment);
+  document.getElementById("pwshProfiles").addEventListener("click", handlePwshProfiles);
+  document.getElementById("collectLogs").addEventListener("click", handleCollectLogs);
+  document.getElementById("createGroup").addEventListener("click", handleCreateGroup);
   
   document.getElementById("groupResults").addEventListener("change", (event) => {
     if (event.target.type === "checkbox") {
@@ -3621,15 +3632,12 @@ document.addEventListener("DOMContentLoaded", () => {
   // Theme toggle button
   document.getElementById("theme-toggle").addEventListener("click", () => {
     toggleTheme();
-    if (typeof Analytics !== 'undefined') {
-      Analytics.trackButtonClick("theme_toggle");
-    }
   });
 
   // Settings menu functionality
   const settingsButton = document.getElementById("settingsButton");
   const settingsDropdown = document.getElementById("settingsDropdown");
-  
+
   settingsButton.addEventListener("click", (e) => {
     e.stopPropagation();
     settingsDropdown.classList.toggle("show");
@@ -3662,7 +3670,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("clearStorageOption").addEventListener("click", (e) => {
     e.preventDefault();
     settingsDropdown.classList.remove("show");
-    
+
     // Show confirmation dialog
     if (confirm('Are you sure you want to clear all extension storage? This will remove all cached data, settings, and search history. This action cannot be undone.')) {
       clearExtensionStorage();
@@ -3671,52 +3679,61 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Function to clear all extension storage
   const clearExtensionStorage = () => {
-    // Preserve current theme before clearing storage
+    // Preserve current theme and analytics preference before clearing storage
     const currentTheme = state.theme;
-    
-    chrome.storage.local.clear(() => {
-      if (chrome.runtime.lastError) {
-        showResultNotification('Error clearing extension storage: ' + chrome.runtime.lastError.message, 'error');
-        logMessage('Error clearing extension storage: ' + chrome.runtime.lastError.message);
-      } else {
-        // Reset state variables to default values (but keep theme)
-        state.currentDisplayType = 'config';
-        state.sortDirection = 'asc';
-        state.theme = currentTheme; // Keep current theme
-        state.targetMode = 'device';
-        state.selectedTableRows.clear();
-        state.dynamicGroups.clear();
-        state.pagination = {
-          currentPage: 1,
-          itemsPerPage: 10,
-          totalItems: 0,
-          totalPages: 0,
-          filteredData: [],
-          selectedRowIds: new Set()
-        };
 
-        // Restore theme setting to storage
-        chrome.storage.local.set({ theme: currentTheme });
+    // Get analytics preference before clearing
+    chrome.storage.local.get(['analyticsEnabled'], (data) => {
+      const analyticsEnabled = data.analyticsEnabled;
 
-        // Reset UI to default state (but keep current theme)
-        applyTheme(currentTheme);
-        document.getElementById('deviceModeBtn').classList.add('active');
-        document.getElementById('userModeBtn').classList.remove('active');
-        document.getElementById('addBtnText').textContent = 'Add';
-        document.getElementById('removeBtnText').textContent = 'Remove';
-        
-        // Clear all table content
-        document.getElementById('configTableBody').innerHTML = '';
-        document.getElementById('groupResults').innerHTML = '';
-        document.getElementById('groupSearchInput').value = '';
-        document.getElementById('profileFilterInput').value = '';
-        
-        // Reset pagination
-        document.getElementById('paginationContainer').style.display = 'none';
-        
-        showResultNotification('Extension storage cleared successfully. All cached data has been reset (theme preference preserved).', 'success');
-        logMessage('Extension storage cleared successfully via settings menu (theme preserved)');
-      }
+      chrome.storage.local.clear(() => {
+        if (chrome.runtime.lastError) {
+          showResultNotification('Error clearing extension storage: ' + chrome.runtime.lastError.message, 'error');
+          logMessage('Error clearing extension storage: ' + chrome.runtime.lastError.message);
+        } else {
+          // Reset state variables to default values (but keep theme and analytics preference)
+          state.currentDisplayType = 'config';
+          state.sortDirection = 'asc';
+          state.theme = currentTheme; // Keep current theme
+          state.targetMode = 'device';
+          state.selectedTableRows.clear();
+          state.dynamicGroups.clear();
+          state.pagination = {
+            currentPage: 1,
+            itemsPerPage: 10,
+            totalItems: 0,
+            totalPages: 0,
+            filteredData: [],
+            selectedRowIds: new Set()
+          };
+
+          // Restore preserved settings to storage
+          const preservedSettings = { theme: currentTheme };
+          if (analyticsEnabled !== undefined) {
+            preservedSettings.analyticsEnabled = analyticsEnabled;
+          }
+          chrome.storage.local.set(preservedSettings);
+
+          // Reset UI to default state (but keep current theme)
+          applyTheme(currentTheme);
+          document.getElementById('deviceModeBtn').classList.add('active');
+          document.getElementById('userModeBtn').classList.remove('active');
+          document.getElementById('addBtnText').textContent = 'Add';
+          document.getElementById('removeBtnText').textContent = 'Remove';
+
+          // Clear all table content
+          document.getElementById('configTableBody').innerHTML = '';
+          document.getElementById('groupResults').innerHTML = '';
+          document.getElementById('groupSearchInput').value = '';
+          document.getElementById('profileFilterInput').value = '';
+
+          // Reset pagination
+          document.getElementById('paginationContainer').style.display = 'none';
+
+          showResultNotification('Extension storage cleared successfully. All cached data has been reset (theme and analytics preferences preserved).', 'success');
+          logMessage('Extension storage cleared successfully via settings menu (theme and analytics preference preserved)');
+        }
+      });
     });
   };
 
@@ -3736,9 +3753,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // Export CSV button event listener
   document.getElementById("exportCsvBtn").addEventListener("click", () => {
     exportTableToCsv();
-    if (typeof Analytics !== 'undefined') {
-      Analytics.trackFeatureUsage("export_csv", { display_type: state.currentDisplayType });
-    }
   });
 
   // Keyboard navigation for pagination
@@ -3764,15 +3778,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // Target mode toggle buttons
   document.getElementById("deviceModeBtn").addEventListener("click", () => {
     handleTargetModeToggle('device');
-    if (typeof Analytics !== 'undefined') {
-      Analytics.trackFeatureUsage("toggle_target_mode", { mode: "device" });
-    }
   });
   document.getElementById("userModeBtn").addEventListener("click", () => {
     handleTargetModeToggle('user');
-    if (typeof Analytics !== 'undefined') {
-      Analytics.trackFeatureUsage("toggle_target_mode", { mode: "user" });
-    }
   });
 
   // ── Welcome Notification Management ───────────────────────────────────

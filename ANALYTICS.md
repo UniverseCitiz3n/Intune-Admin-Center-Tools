@@ -72,32 +72,6 @@ This extension uses GA4 with the Measurement Protocol API, which:
 3. If enabled, sends anonymous event to GA4 via Measurement Protocol
 4. Google Analytics aggregates and reports the data
 
-## Setup for Developers
-
-If you're forking this extension or want to set up your own analytics:
-
-### Step 1: Create GA4 Property
-1. Go to [Google Analytics](https://analytics.google.com)
-2. Create a new GA4 property
-3. Create a Web Data Stream (even though this is an extension)
-
-### Step 2: Get Credentials
-1. Navigate to **Admin** → **Data Streams** → Select your stream
-2. Copy your **Measurement ID** (format: `G-XXXXXXXXXX`)
-3. Go to **Measurement Protocol API secrets** and create a new secret
-4. Copy the **API Secret**
-
-### Step 3: Configure Extension
-1. Open `analytics.js`
-2. Replace `GA_MEASUREMENT_ID` with your Measurement ID
-3. Replace `GA_API_SECRET` with your API Secret
-4. Save and deploy the extension
-
-### Step 4: Verify
-1. Install the extension
-2. Use it normally
-3. Check GA4 Realtime reports to see events
-
 ## Events Reference
 
 ### Button Click Events
