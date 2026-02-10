@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "Intune Admin Center Tools",
-    "version": "1.4.3",
+    "version": "1.4.4",
     "description": "Tools for managing Intune devices: check app and config assignments, manage group memberships, download PowerShell script, and more.",
     "permissions": [
         "webRequest",
