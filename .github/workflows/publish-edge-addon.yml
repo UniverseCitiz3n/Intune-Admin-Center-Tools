@@ -35,6 +35,16 @@ jobs:
           echo "Extension name updated for beta release"
           jq '{name, version, description}' manifest.json
       
+      - name: Configure Google Analytics
+        run: |
+          # Replace GA_MEASUREMENT_ID placeholder with actual secret value
+          sed -i "s/const GA_MEASUREMENT_ID = 'XXXXXXXXXXXXXX'/const GA_MEASUREMENT_ID = '${{ secrets.GA_MEASUREMENT_ID }}'/g" analytics.js
+          
+          # Replace GA_API_SECRET placeholder with actual secret value
+          sed -i "s/const GA_API_SECRET = 'XXXXXXXXXXXXXX'/const GA_API_SECRET = '${{ secrets.GA_API_SECRET }}'/g" analytics.js
+          
+          echo "✅ Google Analytics credentials configured"
+      
       - name: Create extension package
         run: |
           # Create a zip file with all extension files
