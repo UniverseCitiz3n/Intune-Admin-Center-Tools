@@ -4497,6 +4497,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // Create Device Group from Users Feature
   // ══════════════════════════════════════════════════════════════
 
+  // Constants
+  const BIG_GROUP_THRESHOLD = 200;
+  const MAX_FAILURES_TO_DISPLAY = 10;
+
   // State for create device group feature
   const createDeviceGroupState = {
     baseGroupId: null,
@@ -4505,6 +4509,7 @@ document.addEventListener("DOMContentLoaded", () => {
     platforms: [],
     transitive: true,
     discoveredDevices: [],
+    userCount: 0,
     cancellationRequested: false
   };
 
@@ -4575,6 +4580,7 @@ document.addEventListener("DOMContentLoaded", () => {
     
     const os = operatingSystem.toLowerCase();
     
+    // Check macOS before iOS to avoid matching 'ios' in 'macos'
     if (os.includes('windows')) return 'Windows';
     if (os.includes('macos') || os.includes('mac os')) return 'macOS';
     if (os.includes('ios') || os.includes('ipad')) return 'iOS';
@@ -4592,7 +4598,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       // Use $filter to query for devices where userId_in_primaryUser matches
-      const url = `https://graph.microsoft.com/beta/deviceManagement/managedDevices?$filter=userId eq '${userId}'&$select=id,deviceName,operatingSystem,azureADDeviceId,userId`;
+      const url = `https://graph.microsoft.com/beta/deviceManagement/managedDevices?$filter=userId eq '${encodeURIComponent(userId)}'&$select=id,deviceName,operatingSystem,azureADDeviceId,userId`;
       const response = await fetchJSON(url, { method: 'GET', headers });
       
       return response.value || [];
@@ -4693,10 +4699,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
       logMessage(`createDeviceGroup: Discovered ${allDevices.length} unique devices`);
       createDeviceGroupState.discoveredDevices = allDevices;
+      createDeviceGroupState.userCount = users.length; // Save user count for results
 
       // Step 3: Check if big group confirmation needed
-      const threshold = 200;
-      if (allDevices.length > threshold) {
+      if (allDevices.length > BIG_GROUP_THRESHOLD) {
         showBigGroupConfirmation(allDevices.length);
         return;
       }
@@ -4775,13 +4781,25 @@ document.addEventListener("DOMContentLoaded", () => {
     updateProgress('Creating Entra group...', 70);
 
     const platformsStr = createDeviceGroupState.platforms.join(', ');
-    const description = `Created by IACT from base group: ${createDeviceGroupState.baseGroupName} (${createDeviceGroupState.baseGroupId}), source=PrimaryUser, platforms=${platformsStr}, transitive=${createDeviceGroupState.transitive}`;
+    let description = `Created by IACT from base group: ${createDeviceGroupState.baseGroupName} (${createDeviceGroupState.baseGroupId}), source=PrimaryUser, platforms=${platformsStr}, transitive=${createDeviceGroupState.transitive}`;
+    
+    // Truncate description if too long (Graph API limit is 1024 characters)
+    if (description.length > 1024) {
+      description = description.substring(0, 1021) + '...';
+    }
+
+    // Generate mailNickname - ensure it's not empty and add timestamp for uniqueness
+    let mailNickname = createDeviceGroupState.newGroupName.replace(/[^a-zA-Z0-9]/g, '');
+    if (!mailNickname || mailNickname.length === 0) {
+      mailNickname = 'group';
+    }
+    mailNickname = mailNickname.substring(0, 50) + '_' + Date.now().toString().substring(7);
 
     const groupBody = {
       displayName: createDeviceGroupState.newGroupName,
       description: description,
       mailEnabled: false,
-      mailNickname: createDeviceGroupState.newGroupName.replace(/[^a-zA-Z0-9]/g, ''),
+      mailNickname: mailNickname,
       securityEnabled: true,
       groupTypes: [] // Assigned membership
     };
@@ -4814,7 +4832,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Show results
     showCreateDeviceGroupResults({
       groupName: createDeviceGroupState.newGroupName,
-      usersProcessed: createDeviceGroupState.discoveredDevices.length, // This should be user count, but we'll use device count for now
+      usersProcessed: createDeviceGroupState.userCount || 0,
       devicesDiscovered: devices.length,
       devicesAdded: addResults.added,
       devicesFailed: addResults.failed,
@@ -4843,7 +4861,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (device.azureADDeviceId) {
         try {
           const directoryDevice = await fetchJSON(
-            `https://graph.microsoft.com/v1.0/devices?$filter=deviceId eq '${device.azureADDeviceId}'&$select=id`,
+            `https://graph.microsoft.com/v1.0/devices?$filter=deviceId eq '${encodeURIComponent(device.azureADDeviceId)}'&$select=id`,
             {
               method: 'GET',
               headers: { 'Authorization': token, 'Content-Type': 'application/json' }
@@ -4963,6 +4981,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById('createDeviceGroupResultsSection').style.display = 'block';
 
     let summaryMsg = `✓ New group created: ${results.groupName}\n`;
+    summaryMsg += `\nUsers processed: ${results.usersProcessed}`;
     summaryMsg += `\nDevices discovered: ${results.devicesDiscovered}`;
     summaryMsg += `\nDevices added successfully: ${results.devicesAdded}`;
     
@@ -4983,7 +5002,7 @@ document.addEventListener("DOMContentLoaded", () => {
       detailsDiv.appendChild(failureTitle);
 
       // Show first 10 failures
-      const failuresToShow = results.failures.slice(0, 10);
+      const failuresToShow = results.failures.slice(0, MAX_FAILURES_TO_DISPLAY);
       failuresToShow.forEach(failure => {
         const failureItem = document.createElement('div');
         failureItem.className = 'failure-item';
@@ -5000,9 +5019,9 @@ document.addEventListener("DOMContentLoaded", () => {
         detailsDiv.appendChild(failureItem);
       });
 
-      if (results.failures.length > 10) {
+      if (results.failures.length > MAX_FAILURES_TO_DISPLAY) {
         const moreMsg = document.createElement('p');
-        moreMsg.textContent = `... and ${results.failures.length - 10} more failures.`;
+        moreMsg.textContent = `... and ${results.failures.length - MAX_FAILURES_TO_DISPLAY} more failures.`;
         moreMsg.style.fontStyle = 'italic';
         detailsDiv.appendChild(moreMsg);
       }
