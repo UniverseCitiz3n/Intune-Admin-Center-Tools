@@ -35,19 +35,19 @@ The following information is **NEVER** collected or sent to Google Analytics:
 
 ## User Control
 
+### Opt-In
+Analytics is **disabled by default** on installation. Users can enable it to help shape the roadmap:
+
+1. Click the **Settings** button (⋮) in the extension popup
+2. Click **Analytics: Disabled** to toggle it on
+3. A notification will confirm that analytics is enabled
+
 ### Opt-Out
 Users can disable analytics at any time:
 
 1. Click the **Settings** button (⋮) in the extension popup
 2. Click **Analytics: Enabled** to toggle it off
 3. A notification will confirm that analytics is disabled
-
-### Opt-In
-Analytics is **enabled by default** on installation. Users who have disabled it can re-enable it:
-
-1. Click the **Settings** button (⋮) in the extension popup
-2. Click **Analytics: Disabled** to toggle it on
-3. A notification will confirm that analytics is enabled
 
 ### Checking Status
 The current analytics status is always visible in the Settings menu.

@@ -29,7 +29,7 @@ const Analytics = (() => {
   const MEASUREMENT_PROTOCOL_URL = `https://www.google-analytics.com/mp/collect?measurement_id=${GA_MEASUREMENT_ID}&api_secret=${GA_API_SECRET}`;
   
   let clientId = null;
-  let analyticsEnabled = true; // Enabled by default on installation
+  let analyticsEnabled = false; // Disabled by default, user can opt-in
   let sessionId = null;
 
   // Initialize analytics

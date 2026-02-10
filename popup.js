@@ -3846,7 +3846,7 @@ document.addEventListener("DOMContentLoaded", () => {
           showNotification('Analytics disabled. Usage data will no longer be collected.', 'info');
         } else {
           await Analytics.enable();
-          showNotification('Analytics enabled. Anonymous usage data will be collected.', 'success');
+          showNotification('Analytics enabled. Thank you for helping shape the roadmap!', 'success');
         }
         updateAnalyticsToggleUI();
       });

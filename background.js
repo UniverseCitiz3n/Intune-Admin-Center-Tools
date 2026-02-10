@@ -26,8 +26,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
     console.log('[Analytics] Extension installed');
-    // Set default analytics preference on installation (enabled by default)
-    chrome.storage.local.set({ analyticsEnabled: true });
+    // Set default analytics preference on installation (disabled by default)
+    chrome.storage.local.set({ analyticsEnabled: false });
   } else if (details.reason === 'update') {
     console.log('[Analytics] Extension updated from', details.previousVersion, 'to', chrome.runtime.getManifest().version);
   }
