@@ -4597,8 +4597,10 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     try {
+      // Escape single quotes for OData filter values
+      const escapedUserId = userId.replace(/'/g, "''");
       // Use $filter to query for devices where userId_in_primaryUser matches
-      const url = `https://graph.microsoft.com/beta/deviceManagement/managedDevices?$filter=userId eq '${encodeURIComponent(userId)}'&$select=id,deviceName,operatingSystem,azureADDeviceId,userId`;
+      const url = `https://graph.microsoft.com/beta/deviceManagement/managedDevices?$filter=userId eq '${escapedUserId}'&$select=id,deviceName,operatingSystem,azureADDeviceId,userId`;
       const response = await fetchJSON(url, { method: 'GET', headers });
       
       return response.value || [];
@@ -4860,8 +4862,10 @@ document.addEventListener("DOMContentLoaded", () => {
       // Use azureADDeviceId to look up the directory object
       if (device.azureADDeviceId) {
         try {
+          // Escape single quotes for OData filter values
+          const escapedDeviceId = device.azureADDeviceId.replace(/'/g, "''");
           const directoryDevice = await fetchJSON(
-            `https://graph.microsoft.com/v1.0/devices?$filter=deviceId eq '${encodeURIComponent(device.azureADDeviceId)}'&$select=id`,
+            `https://graph.microsoft.com/v1.0/devices?$filter=deviceId eq '${escapedDeviceId}'&$select=id`,
             {
               method: 'GET',
               headers: { 'Authorization': token, 'Content-Type': 'application/json' }
