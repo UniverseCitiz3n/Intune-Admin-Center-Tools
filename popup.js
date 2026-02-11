@@ -5856,8 +5856,21 @@ document.addEventListener("DOMContentLoaded", () => {
     // Update analytics toggle UI based on current state
     const updateAnalyticsToggleUI = () => {
       const toggleText = document.getElementById('analyticsToggleText');
-      if (toggleText) {
-        toggleText.textContent = Analytics.isEnabled() ? 'Analytics: Enabled' : 'Analytics: Disabled';
+      const analyticsToggle = document.getElementById('analyticsToggleOption');
+      
+      if (Analytics.isBeta()) {
+        // Beta release - hide the toggle option entirely
+        if (analyticsToggle) {
+          analyticsToggle.style.display = 'none';
+        }
+      } else {
+        // Prod release - show toggle with current state
+        if (analyticsToggle) {
+          analyticsToggle.style.display = '';
+        }
+        if (toggleText) {
+          toggleText.textContent = Analytics.isEnabled() ? 'Analytics: Enabled' : 'Analytics: Disabled';
+        }
       }
     };
 
@@ -5866,9 +5879,18 @@ document.addEventListener("DOMContentLoaded", () => {
     if (analyticsToggle) {
       analyticsToggle.addEventListener('click', async (e) => {
         e.preventDefault();
+        
+        // Prevent disabling analytics in beta
+        if (Analytics.isBeta()) {
+          showNotification('Analytics cannot be disabled in beta releases.', 'info');
+          return;
+        }
+        
         if (Analytics.isEnabled()) {
-          await Analytics.disable();
-          showNotification('Analytics disabled. Usage data will no longer be collected.', 'info');
+          const disabled = await Analytics.disable();
+          if (disabled) {
+            showNotification('Analytics disabled. Usage data will no longer be collected.', 'info');
+          }
         } else {
           await Analytics.enable();
           showNotification('Analytics enabled. Thank you for helping shape the roadmap!', 'success');

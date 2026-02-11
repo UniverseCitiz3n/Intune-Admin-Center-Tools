@@ -43,6 +43,15 @@ jobs:
           # Replace GA_API_SECRET placeholder with actual secret value
           sed -i "s/const GA_API_SECRET = 'XXXXXXXXXXXXXX'/const GA_API_SECRET = '${{ secrets.GA_API_SECRET }}'/g" analytics.js
           
+          # Set release type based on whether this is a prerelease (beta) or not
+          if [ "${{ github.event.release.prerelease }}" == "true" ]; then
+            sed -i "s/const RELEASE_TYPE = 'prod'/const RELEASE_TYPE = 'beta'/g" analytics.js
+            echo "✅ Release type set to: beta"
+          else
+            # Prod release - keep default 'prod' value
+            echo "✅ Release type set to: prod"
+          fi
+          
           echo "✅ Google Analytics credentials configured"
       
       - name: Create extension package
@@ -55,6 +64,7 @@ jobs:
             popup.html \
             popup.js \
             style.css \
+            analytics.js \
             extension_icon16.png \
             extension_icon32.png \
             extension_icon48.png \
