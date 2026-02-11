@@ -239,6 +239,13 @@ input[type="text"]::placeholder {
   color: #666;
 }
 
+.analytics-help-text {
+  padding: 0 16px 8px 16px;
+  font-size: 11px;
+  color: #999;
+  font-style: italic;
+}
+
 .settings-divider {
   height: 1px;
   background-color: #e0e0e0;
@@ -275,6 +282,11 @@ input[type="text"]::placeholder {
 
 #groupResults span {
   color: var(--group-text) !important;
+  user-select: text; /* Allow text selection in group names */
+}
+
+#groupResults label {
+  user-select: text; /* Allow text selection in group labels */
 }
 
 /* Button styling - Updated for dark mode */
@@ -339,7 +351,11 @@ table {
 .table-row-selectable {
   cursor: pointer;
   transition: background-color 0.2s ease;
-  user-select: none;
+}
+
+.table-row-selectable td,
+.table-row-disabled td {
+  user-select: text; /* Allow text selection in table cells */
 }
 
 .table-row-selectable:hover {
@@ -1133,6 +1149,10 @@ input[type="checkbox"]:disabled + span {
 
 [data-theme="dark"] .settings-dropdown i {
   color: #ccc;
+}
+
+[data-theme="dark"] .analytics-help-text {
+  color: #777;
 }
 
 [data-theme="dark"] .settings-divider {

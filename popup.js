@@ -369,8 +369,8 @@ document.addEventListener("DOMContentLoaded", () => {
     csvContent = headers.map(escapeCsvValue).join(',') + '\n';
     csvContent += rows.map(row => row.map(escapeCsvValue).join(',')).join('\n');
 
-    // Create and download file
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    // Create and download file with UTF-8 BOM for proper special character handling
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
@@ -5367,6 +5367,29 @@ document.addEventListener("DOMContentLoaded", () => {
       currentDisplayType: state.currentDisplayType
     });
   });
+
+  // ── Analytics Tracking (Event Delegation) ─────────────────────────────
+  // Automatically tracks clicks on any element with an id attribute.
+  // New buttons are tracked by default — no extra code needed.
+  // PRIVACY: Filters out sensitive IDs that contain group IDs or other PII
+  document.addEventListener("click", (e) => {
+    if (typeof Analytics === 'undefined') return;
+    const target = e.target.closest("[id]");
+    if (target) {
+      // Never track IDs that contain sensitive data like group IDs (UUID patterns)
+      // Group IDs follow the pattern: 00000000-0000-0000-0000-000000000000
+      const hasUuidPattern = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(target.id);
+      
+      if (!hasUuidPattern) {
+        // Safe to track - no sensitive data
+        Analytics.trackButtonClick(target.id);
+      } else {
+        // Skip tracking for sensitive IDs; log for debugging
+        console.log('[Analytics] Skipped tracking for element with sensitive ID:', target.id.substring(0, 20) + '...');
+      }
+    }
+  });
+
   document.getElementById("searchGroup").addEventListener("click", handleSearchGroup);
   document.getElementById("addToGroups").addEventListener("click", handleAddToGroups);
   document.getElementById("removeFromGroups").addEventListener("click", handleRemoveFromGroups);
@@ -5568,12 +5591,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
   // Theme toggle button
-  document.getElementById("theme-toggle").addEventListener("click", toggleTheme);
+  document.getElementById("theme-toggle").addEventListener("click", () => {
+    toggleTheme();
+  });
 
   // Settings menu functionality
   const settingsButton = document.getElementById("settingsButton");
   const settingsDropdown = document.getElementById("settingsDropdown");
-  
+
   settingsButton.addEventListener("click", (e) => {
     e.stopPropagation();
     settingsDropdown.classList.toggle("show");
@@ -5606,7 +5631,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("clearStorageOption").addEventListener("click", (e) => {
     e.preventDefault();
     settingsDropdown.classList.remove("show");
-    
+
     // Show confirmation dialog
     if (confirm('Are you sure you want to clear all extension storage? This will remove all cached data, settings, and search history. This action cannot be undone.')) {
       clearExtensionStorage();
@@ -5615,52 +5640,61 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Function to clear all extension storage
   const clearExtensionStorage = () => {
-    // Preserve current theme before clearing storage
+    // Preserve current theme and analytics preference before clearing storage
     const currentTheme = state.theme;
-    
-    chrome.storage.local.clear(() => {
-      if (chrome.runtime.lastError) {
-        showResultNotification('Error clearing extension storage: ' + chrome.runtime.lastError.message, 'error');
-        logMessage('Error clearing extension storage: ' + chrome.runtime.lastError.message);
-      } else {
-        // Reset state variables to default values (but keep theme)
-        state.currentDisplayType = 'config';
-        state.sortDirection = 'asc';
-        state.theme = currentTheme; // Keep current theme
-        state.targetMode = 'device';
-        state.selectedTableRows.clear();
-        state.dynamicGroups.clear();
-        state.pagination = {
-          currentPage: 1,
-          itemsPerPage: 10,
-          totalItems: 0,
-          totalPages: 0,
-          filteredData: [],
-          selectedRowIds: new Set()
-        };
 
-        // Restore theme setting to storage
-        chrome.storage.local.set({ theme: currentTheme });
+    // Get analytics preference before clearing
+    chrome.storage.local.get(['analyticsEnabled'], (data) => {
+      const analyticsEnabled = data.analyticsEnabled;
 
-        // Reset UI to default state (but keep current theme)
-        applyTheme(currentTheme);
-        document.getElementById('deviceModeBtn').classList.add('active');
-        document.getElementById('userModeBtn').classList.remove('active');
-        document.getElementById('addBtnText').textContent = 'Add';
-        document.getElementById('removeBtnText').textContent = 'Remove';
-        
-        // Clear all table content
-        document.getElementById('configTableBody').innerHTML = '';
-        document.getElementById('groupResults').innerHTML = '';
-        document.getElementById('groupSearchInput').value = '';
-        document.getElementById('profileFilterInput').value = '';
-        
-        // Reset pagination
-        document.getElementById('paginationContainer').style.display = 'none';
-        
-        showResultNotification('Extension storage cleared successfully. All cached data has been reset (theme preference preserved).', 'success');
-        logMessage('Extension storage cleared successfully via settings menu (theme preserved)');
-      }
+      chrome.storage.local.clear(() => {
+        if (chrome.runtime.lastError) {
+          showResultNotification('Error clearing extension storage: ' + chrome.runtime.lastError.message, 'error');
+          logMessage('Error clearing extension storage: ' + chrome.runtime.lastError.message);
+        } else {
+          // Reset state variables to default values (but keep theme and analytics preference)
+          state.currentDisplayType = 'config';
+          state.sortDirection = 'asc';
+          state.theme = currentTheme; // Keep current theme
+          state.targetMode = 'device';
+          state.selectedTableRows.clear();
+          state.dynamicGroups.clear();
+          state.pagination = {
+            currentPage: 1,
+            itemsPerPage: 10,
+            totalItems: 0,
+            totalPages: 0,
+            filteredData: [],
+            selectedRowIds: new Set()
+          };
+
+          // Restore preserved settings to storage
+          const preservedSettings = { theme: currentTheme };
+          if (analyticsEnabled !== undefined) {
+            preservedSettings.analyticsEnabled = analyticsEnabled;
+          }
+          chrome.storage.local.set(preservedSettings);
+
+          // Reset UI to default state (but keep current theme)
+          applyTheme(currentTheme);
+          document.getElementById('deviceModeBtn').classList.add('active');
+          document.getElementById('userModeBtn').classList.remove('active');
+          document.getElementById('addBtnText').textContent = 'Add';
+          document.getElementById('removeBtnText').textContent = 'Remove';
+
+          // Clear all table content
+          document.getElementById('configTableBody').innerHTML = '';
+          document.getElementById('groupResults').innerHTML = '';
+          document.getElementById('groupSearchInput').value = '';
+          document.getElementById('profileFilterInput').value = '';
+
+          // Reset pagination
+          document.getElementById('paginationContainer').style.display = 'none';
+
+          showResultNotification('Extension storage cleared successfully. All cached data has been reset (theme and analytics preferences preserved).', 'success');
+          logMessage('Extension storage cleared successfully via settings menu (theme and analytics preference preserved)');
+        }
+      });
     });
   };
 
@@ -5703,8 +5737,12 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Target mode toggle buttons
-  document.getElementById("deviceModeBtn").addEventListener("click", () => handleTargetModeToggle('device'));
-  document.getElementById("userModeBtn").addEventListener("click", () => handleTargetModeToggle('user'));
+  document.getElementById("deviceModeBtn").addEventListener("click", () => {
+    handleTargetModeToggle('device');
+  });
+  document.getElementById("userModeBtn").addEventListener("click", () => {
+    handleTargetModeToggle('user');
+  });
 
   // ── Welcome Notification Management ───────────────────────────────────
   // Add keyboard shortcut to show welcome notification (Ctrl+Shift+W)
@@ -5742,5 +5780,42 @@ document.addEventListener("DOMContentLoaded", () => {
   const versionElement = document.getElementById('extensionVersion');
   if (versionElement && chrome.runtime && chrome.runtime.getManifest) {
     versionElement.textContent = chrome.runtime.getManifest().version;
+  }
+
+  // ── Analytics Initialization ──────────────────────────────────────────
+  // Initialize analytics when popup opens
+  if (typeof Analytics !== 'undefined') {
+    Analytics.init().then(() => {
+      Analytics.trackPageView('popup');
+    });
+
+    // Update analytics toggle UI based on current state
+    const updateAnalyticsToggleUI = () => {
+      const toggleText = document.getElementById('analyticsToggleText');
+      if (toggleText) {
+        toggleText.textContent = Analytics.isEnabled() ? 'Analytics: Enabled' : 'Analytics: Disabled';
+      }
+    };
+
+    // Analytics toggle handler
+    const analyticsToggle = document.getElementById('analyticsToggleOption');
+    if (analyticsToggle) {
+      analyticsToggle.addEventListener('click', async (e) => {
+        e.preventDefault();
+        if (Analytics.isEnabled()) {
+          await Analytics.disable();
+          showNotification('Analytics disabled. Usage data will no longer be collected.', 'info');
+        } else {
+          await Analytics.enable();
+          showNotification('Analytics enabled. Thank you for helping shape the roadmap!', 'success');
+        }
+        updateAnalyticsToggleUI();
+      });
+    }
+
+    // Update UI on load
+    chrome.storage.local.get(['analyticsEnabled'], (data) => {
+      updateAnalyticsToggleUI();
+    });
   }
 });

@@ -16,7 +16,8 @@
     },
     "host_permissions": [
         "*://graph.microsoft.com/*",
-        "https://intune.microsoft.com/*"
+        "https://intune.microsoft.com/*",
+        "https://www.google-analytics.com/*"
     ],
     "background": {
         "service_worker": "background.js"

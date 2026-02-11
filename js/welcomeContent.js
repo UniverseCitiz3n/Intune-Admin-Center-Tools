@@ -34,7 +34,32 @@ const WELCOME_CONTENT = {
       'Check compliance policy assignments',
       'View app assignments',
       'Check group assignments',
-      'Export output tables to CSV',
+      'Export output tables to CSV (new)'
+    ],
+    tips: [
+      'Use Ctrl+Shift+W to show this welcome message anytime',
+      'The extension works on any Intune Admin Center page',
+      'Switch between Device and User modes using the toggle buttons',
+      'Filter results using the search boxes for better navigation',
+      'Click the download icon in the pagination area to export the table to CSV'
+    ]
+  },
+  '1.4.1': {
+    title: 'Welcome to Intune Admin Center Tools v1.4.1!',
+    intro: `This release adds a streamlined way to review configuration assignments for your groups, along with UX improvements.`,
+    changelog: [
+      'UI: Welcome Guide closing behavior improved',
+      'v1.4 features:',
+      '  - NEW: Check group assignments feature',
+      '  - NEW: Export table data to CSV',
+      '  - UI: Freshened user interface for better usability'
+    ],
+    features: [
+      'Search and manage Azure AD groups',
+      'Check device/user configuration assignments',
+      'Manage group memberships (add/remove devices and users)',
+      'Check compliance policy assignments',
+      'View app assignments',
       'Dark/Light theme support',
       'Download PowerShell scripts for automation'
     ],
@@ -54,6 +79,103 @@ const WELCOME_CONTENT = {
 
   // Previous versions are hidden to keep welcome message focused on latest features
   
+  '1.4.2': {
+    title: 'Welcome to Intune Admin Center Tools v1.4.2!',
+    intro: `This release fixes an important issue with CSV exports for international users.`,
+    changelog: [
+      'FIX: Added UTF-8 BOM to CSV files for proper encoding in Excel and other applications',
+      'v1.4.1 features:',
+      '  - UI: Welcome Guide closing behavior improved',
+      'v1.4 features:',
+      '  - NEW: Check group assignments feature',
+      '  - NEW: Export table data to CSV',
+      '  - UI: Freshened user interface for better usability'
+    ],
+    features: [
+      'Search and manage Azure AD groups',
+      'Check device/user configuration assignments',
+      'Manage group memberships (add/remove devices and users)',
+      'Check compliance policy assignments',
+      'View app assignments',
+      'Dark/Light theme support',
+      'Download PowerShell scripts for automation',
+      'Check group assignments',
+      'Export output tables to CSV with proper character encoding'
+    ],
+    tips: [
+      'Use Ctrl+Shift+W to show this welcome message anytime',
+      'The extension works on any Intune Admin Center page',
+      'Switch between Device and User modes using the toggle buttons',
+      'Filter results using the search boxes for better navigation',
+      'Click the download icon in the pagination area to export the table to CSV',
+      'CSV exports now support UTF-8 with BOM for better compatibility'
+    ]
+  },
+
+  '1.4.4': {
+    title: 'Welcome to Intune Admin Center Tools v1.4.4!',
+    intro: `This release adds optional, privacy-focused analytics to help shape future development.`,
+    changelog: [
+      'NEW: Optional anonymous usage analytics (disabled by default)',
+      'Analytics helps understand which features are most valuable',
+      'Opt-in via Settings menu: "Enable to help shape the roadmap"',
+      'Zero personal data collected - only button clicks and feature usage',
+      'Full transparency: see ANALYTICS.md for complete details'
+    ],
+    features: [
+      'Search and manage Azure AD groups',
+      'Check device/user configuration assignments',
+      'Manage group memberships (add/remove devices and users)',
+      'Check compliance policy assignments',
+      'View app assignments',
+      'Dark/Light theme support',
+      'Download PowerShell scripts for automation',
+      'Check group assignments',
+      'Export output tables to CSV with proper character encoding',
+      'Copy text from tables and search results',
+      'Optional analytics toggle (new)'
+    ],
+    tips: [
+      'Use Ctrl+Shift+W to show this welcome message anytime',
+      'The extension works on any Intune Admin Center page',
+      'Switch between Device and User modes using the toggle buttons',
+      'Filter results using the search boxes for better navigation',
+      'Click the download icon in the pagination area to export the table to CSV',
+      'Click and drag to select text in tables and group names, then copy with Ctrl+C',
+      'Enable analytics in Settings to help prioritize new features'
+    ]
+  },
+
+  '1.4.3': {
+    title: 'Welcome to Intune Admin Center Tools v1.4.3!',
+    intro: `This release enables text selection and copying from tables and group search results.`,
+    changelog: [
+      'NEW: Text selection enabled in all data tables',
+      'NEW: Text selection enabled in group search results',
+      'Users can now copy policy names, group names, and other data to clipboard'
+    ],
+    features: [
+      'Search and manage Azure AD groups',
+      'Check device/user configuration assignments',
+      'Manage group memberships (add/remove devices and users)',
+      'Check compliance policy assignments',
+      'View app assignments',
+      'Dark/Light theme support',
+      'Download PowerShell scripts for automation',
+      'Check group assignments',
+      'Export output tables to CSV with proper character encoding',
+      'Copy text from tables and search results (new)'
+    ],
+    tips: [
+      'Use Ctrl+Shift+W to show this welcome message anytime',
+      'The extension works on any Intune Admin Center page',
+      'Switch between Device and User modes using the toggle buttons',
+      'Filter results using the search boxes for better navigation',
+      'Click the download icon in the pagination area to export the table to CSV',
+      'Click and drag to select text in tables and group names, then copy with Ctrl+C'
+    ]
+  },
+
   // Default fallback content
   'default': {
     title: 'Welcome to Intune Admin Center Tools!',
