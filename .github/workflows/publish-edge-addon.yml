@@ -20,13 +20,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       
+      - name: Update manifest version from release tag
+        run: |
+          # Extract version from release tag (e.g., v1.5.0 -> 1.5.0, v1.5.0-beta.1 -> 1.5.0-beta.1)
+          TAG_NAME="${{ github.event.release.tag_name }}"
+          VERSION="${TAG_NAME#v}"  # Remove 'v' prefix if present
+          
+          # Read current version from manifest.json for logging
+          CURRENT_VERSION=$(jq -r '.version' manifest.json)
+          echo "Current manifest version: $CURRENT_VERSION"
+          echo "Release tag: $TAG_NAME"
+          echo "New version: $VERSION"
+          
+          # Update version in manifest.json
+          jq --arg version "$VERSION" '.version = $version' manifest.json > manifest.json.tmp
+          mv manifest.json.tmp manifest.json
+          
+          echo "✅ Version updated to: $VERSION"
+      
       - name: Add beta indicator to manifest
         if: github.event.release.prerelease == true
         run: |
-          # Read current version from manifest.json for logging
-          CURRENT_VERSION=$(jq -r '.version' manifest.json)
-          echo "Current version: $CURRENT_VERSION"
-          
           # Update the extension name to indicate beta version
           jq '.name = "Intune Admin Center Tools (Beta)"' manifest.json > manifest.json.tmp
           mv manifest.json.tmp manifest.json
