@@ -2220,7 +2220,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // Update member counts in modal
   const updateMemberCounts = (selectedCount, totalCount) => {
     const selectedBtn = document.getElementById('clearSelectedMembersBtn');
-    const allBtn = document.getElementById('clearAllMembersBtn');
     
     if (selectedCount > 0) {
       selectedBtn.disabled = false;
