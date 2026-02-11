@@ -2261,6 +2261,45 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
+  const syncScopeFromCheckboxes = () => {
+    clearMembersState.scope.users = document.getElementById('scopeUsers').checked;
+    clearMembersState.scope.devices = document.getElementById('scopeDevices').checked;
+    clearMembersState.scope.nestedGroups = document.getElementById('scopeNestedGroups').checked;
+  };
+
+  const updateConfirmationMessage = () => {
+    const escapeHtml = (text) => {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    };
+
+    const escapedGroupName = escapeHtml(clearMembersState.selectedGroupName);
+    const typedSection = document.getElementById('typedConfirmSection');
+    const confirmBtn = document.getElementById('confirmRemovalBtn');
+    const scopeSelection = document.getElementById('scopeSelection');
+    let message = '';
+
+    if (clearMembersState.actionType === 'selected') {
+      const selectedMembers = getSelectedMembers();
+      const count = selectedMembers.length;
+      message = `You are about to remove <strong>${count} selected member${count !== 1 ? 's' : ''}</strong> from the group "${escapedGroupName}".`;
+      typedSection.style.display = 'none';
+      scopeSelection.style.display = 'none';
+      confirmBtn.disabled = false;
+    } else if (clearMembersState.actionType === 'all') {
+      syncScopeFromCheckboxes();
+      const scopedMembers = filterMembersByScope(clearMembersState.allMembers);
+      const count = scopedMembers.length;
+      message = `You are about to remove <strong>${count} member${count !== 1 ? 's' : ''}</strong> from the group "${escapedGroupName}" based on the selected scope. This action cannot be undone.`;
+      typedSection.style.display = 'block';
+      scopeSelection.style.display = 'flex';
+      confirmBtn.disabled = true;
+    }
+
+    document.getElementById('confirmationMessage').innerHTML = message;
+  };
+
   // Show confirmation section
   const showConfirmationSection = (actionType) => {
     clearMembersState.actionType = actionType;
@@ -2271,30 +2310,10 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // Show confirmation section
     document.getElementById('confirmationSection').style.display = 'block';
+
+    document.getElementById('typedConfirmInput').value = '';
     
-    // Update confirmation message (escape HTML to prevent XSS)
-    const escapeHtml = (text) => {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
-    };
-    
-    const escapedGroupName = escapeHtml(clearMembersState.selectedGroupName);
-    let count, message;
-    if (actionType === 'selected') {
-      const selectedMembers = getSelectedMembers();
-      count = selectedMembers.length;
-      message = `You are about to remove <strong>${count} selected member${count !== 1 ? 's' : ''}</strong> from the group "${escapedGroupName}".`;
-      document.getElementById('typedConfirmSection').style.display = 'none';
-      document.getElementById('confirmRemovalBtn').disabled = false;
-    } else {
-      count = clearMembersState.allMembers.length;
-      message = `You are about to remove <strong>ALL ${count} member${count !== 1 ? 's' : ''}</strong> from the group "${escapedGroupName}". This action cannot be undone.`;
-      document.getElementById('typedConfirmSection').style.display = 'block';
-      document.getElementById('confirmRemovalBtn').disabled = true;
-    }
-    
-    document.getElementById('confirmationMessage').innerHTML = message;
+    updateConfirmationMessage();
   };
 
   // Validate typed confirmation
@@ -2440,21 +2459,14 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById('confirmationSection').style.display = 'none';
     document.getElementById('progressSection').style.display = 'block';
     
-    // Update scope from checkboxes
-    clearMembersState.scope.users = document.getElementById('scopeUsers').checked;
-    clearMembersState.scope.devices = document.getElementById('scopeDevices').checked;
-    clearMembersState.scope.nestedGroups = document.getElementById('scopeNestedGroups').checked;
-    
     // Get members to remove
     let membersToRemove;
     if (clearMembersState.actionType === 'selected') {
       membersToRemove = getSelectedMembers();
     } else {
-      membersToRemove = clearMembersState.allMembers;
+      syncScopeFromCheckboxes();
+      membersToRemove = filterMembersByScope(clearMembersState.allMembers);
     }
-    
-    // Filter by scope
-    membersToRemove = filterMembersByScope(membersToRemove);
     
     if (membersToRemove.length === 0) {
       showResultsSection({
@@ -4363,6 +4375,21 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   document.getElementById("clearAllMembersBtn").addEventListener("click", () => {
     showConfirmationSection('all');
+  });
+  document.getElementById("scopeUsers").addEventListener("change", () => {
+    if (clearMembersState.actionType === 'all') {
+      updateConfirmationMessage();
+    }
+  });
+  document.getElementById("scopeDevices").addEventListener("change", () => {
+    if (clearMembersState.actionType === 'all') {
+      updateConfirmationMessage();
+    }
+  });
+  document.getElementById("scopeNestedGroups").addEventListener("change", () => {
+    if (clearMembersState.actionType === 'all') {
+      updateConfirmationMessage();
+    }
   });
   document.getElementById("typedConfirmInput").addEventListener("input", (e) => {
     const isValid = e.target.value === 'REMOVE ALL';
