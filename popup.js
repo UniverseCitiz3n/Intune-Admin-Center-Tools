@@ -2371,9 +2371,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Process batch responses
         if (batchResponse.responses) {
+          const throttledMembers = [];
           for (const response of batchResponse.responses) {
             if (response.status === 204 || response.status === 200) {
               results.removed++;
+            } else if (response.status === 429 || response.status === 503) {
+              // Throttled - retry these members individually
+              const memberId = idMapping[response.id];
+              throttledMembers.push(memberId);
             } else {
               results.failed++;
               const memberId = idMapping[response.id];
@@ -2383,6 +2388,67 @@ document.addEventListener("DOMContentLoaded", () => {
                 memberName: member ? (member.displayName || member.userPrincipalName || 'Unknown') : 'Unknown',
                 reason: response.body?.error?.message || `HTTP ${response.status}`
               });
+            }
+          }
+          
+          // Retry throttled members individually with backoff
+          if (throttledMembers.length > 0) {
+            logMessage(`Retrying ${throttledMembers.length} throttled members individually`);
+            for (const memberId of throttledMembers) {
+              let retries = 0;
+              let success = false;
+              
+              while (retries < 3 && !success) {
+                try {
+                  const deleteUrl = `https://graph.microsoft.com/v1.0/groups/${groupId}/members/${memberId}/$ref`;
+                  const response = await fetch(deleteUrl, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': token }
+                  });
+                  
+                  if (response.ok) {
+                    results.removed++;
+                    success = true;
+                  } else if (response.status === 429 || response.status === 503) {
+                    retries++;
+                    if (retries >= 3) {
+                      results.failed++;
+                      const errorBody = await response.json().catch(() => ({}));
+                      const member = clearMembersState.allMembers.find(m => m.id === memberId);
+                      results.failures.push({
+                        memberId: memberId,
+                        memberName: member ? (member.displayName || member.userPrincipalName || 'Unknown') : 'Unknown',
+                        reason: errorBody?.error?.message || `HTTP ${response.status} (throttled)`
+                      });
+                      break;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, retries * 2000));
+                  } else {
+                    results.failed++;
+                    const errorBody = await response.json().catch(() => ({}));
+                    const member = clearMembersState.allMembers.find(m => m.id === memberId);
+                    results.failures.push({
+                      memberId: memberId,
+                      memberName: member ? (member.displayName || member.userPrincipalName || 'Unknown') : 'Unknown',
+                      reason: errorBody?.error?.message || `HTTP ${response.status}`
+                    });
+                    break;
+                  }
+                } catch (error) {
+                  retries++;
+                  if (retries >= 3) {
+                    results.failed++;
+                    const member = clearMembersState.allMembers.find(m => m.id === memberId);
+                    results.failures.push({
+                      memberId: memberId,
+                      memberName: member ? (member.displayName || member.userPrincipalName || 'Unknown') : 'Unknown',
+                      reason: error.message
+                    });
+                    break;
+                  }
+                  await new Promise(resolve => setTimeout(resolve, retries * 2000));
+                }
+              }
             }
           }
         }
@@ -2438,7 +2504,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 });
                 break;
               }
-              retries++;
               await new Promise(resolve => setTimeout(resolve, retries * 1000));
             }
           }
