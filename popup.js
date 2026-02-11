@@ -4480,7 +4480,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
       try {
-        const result = await fetchJSON('https://graph.microsoft.com/beta/groups', {
+        await fetchJSON('https://graph.microsoft.com/beta/groups', {
           method: 'POST',
           headers: {
             'Authorization': data.msGraphToken,
