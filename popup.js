@@ -7,6 +7,7 @@ document.addEventListener("DOMContentLoaded", () => {
     targetMode: 'device', // New: track whether we're targeting devices or users
     selectedTableRows: new Set(), // Track selected table rows
     dynamicGroups: new Set(), // Track dynamic groups that cannot be modified manually
+    lastCheckedGroup: null, // Cache the last group checked via "Check members"
     pagination: {
       currentPage: 1,
       itemsPerPage: 10,
@@ -406,6 +407,9 @@ document.addEventListener("DOMContentLoaded", () => {
       return `${rowData.policyName}-${rowData.targets[0].groupName}-${rowData.targets[0].targetType}`;
     } else if (state.currentDisplayType === 'pwsh') {
       return `${rowData.scriptName}-${rowData.targets[0].groupName}-${rowData.targets[0].targetType}`;
+    } else if (state.currentDisplayType === 'groupMembers') {
+      // Generate unique ID based on member's object ID
+      return `member-${rowData.id}`;
     }
     return '';
   };
@@ -646,9 +650,16 @@ document.addEventListener("DOMContentLoaded", () => {
       const upnOrId = member.userPrincipalName || member.deviceId || '';
       const objectId = member.id || '';
       
+      // Generate unique row ID
+      const rowData = { id: objectId };
+      const rowId = generateRowId(rowData);
+      
+      // Add selectable class for row selection
+      const selectableClass = 'table-row-selectable';
+      
       // For devices, show device ID in the UPN/Device ID column and object ID separately
       // For users, show UPN in the UPN/Device ID column and object ID separately
-      rows += `<tr data-row-index="${rowIndex}">
+      rows += `<tr class="${selectableClass}" data-row-index="${rowIndex}" data-row-id="${rowId}">
         <td style="word-wrap: break-word; white-space: normal;">${member.displayName || ''}</td>
         <td style="word-wrap: break-word; white-space: normal;">${upnOrId}</td>
         <td style="word-wrap: break-word; white-space: normal;">${objectId}</td>
@@ -658,6 +669,14 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     document.getElementById("configTableBody").innerHTML = rows;
+    
+    // Add event listeners for row clicks
+    document.querySelectorAll('#configTableBody tr').forEach((row, index) => {
+      row.addEventListener('click', (e) => handleTableRowClick(row, index));
+    });
+
+    // Restore selection state
+    restoreRowSelection();
   };
 
   const renderGroupAssignmentsTablePage = (assignments) => {
@@ -1044,6 +1063,9 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.removeAttribute('title');
       }
     });
+    
+    // Update Clear Members button state
+    updateClearMembersButtonState();
   };
 
   const getSelectedGroupNames = () => {
@@ -1815,10 +1837,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     logMessage(`fetchAllGroupMembers: Fetching members for group ${groupId}`);
 
-    // First, verify we can access the group itself
+    // First, verify we can access the group itself and get detailed group info
+    let groupInfo = null;
     try {
-      const groupInfoUrl = `https://graph.microsoft.com/beta/groups/${groupId}?$select=id,displayName,groupTypes,visibility,mailEnabled,securityEnabled`;
-      const groupInfo = await fetchJSON(groupInfoUrl, { method: 'GET', headers });
+      const groupInfoUrl = `https://graph.microsoft.com/beta/groups/${groupId}?$select=id,displayName,groupTypes,visibility,mailEnabled,securityEnabled,membershipRule,membershipRuleProcessingState`;
+      groupInfo = await fetchJSON(groupInfoUrl, { method: 'GET', headers });
       logMessage(`fetchAllGroupMembers: Successfully accessed group info: ${JSON.stringify(groupInfo)}`);
     } catch (error) {
       logMessage(`fetchAllGroupMembers: Failed to access group info - ${error.message}`);
@@ -1876,12 +1899,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const seen = new Set();
       
       combined.forEach(m => {
-        // Skip nested groups to avoid infinite recursion
-        if (m['@odata.type'] === '#microsoft.graph.group') {
-          logMessage(`fetchAllGroupMembers: Skipping nested group: ${m.displayName || m.id}`);
-          return;
-        }
-        
+        // Include all member types including nested groups
         if (!seen.has(m.id)) {
           seen.add(m.id);
           unique.push(m);
@@ -1889,8 +1907,25 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       });
 
-      logMessage(`fetchAllGroupMembers: Final result - ${unique.length} unique members from ${combined.length} total entries`);
-      return { members: unique, totalCount: unique.length };
+      // Get the exact count from API responses (use @odata.count if available, otherwise use unique.length)
+      const exactCount = directRes['@odata.count'] || transitiveRes['@odata.count'] || unique.length;
+      
+      // Determine if group is dynamic
+      const isDynamic = groupInfo?.groupTypes?.includes('DynamicMembership') || false;
+      
+      logMessage(`fetchAllGroupMembers: Final result - ${unique.length} unique members from ${combined.length} total entries, exact count: ${exactCount}, isDynamic: ${isDynamic}`);
+      
+      return { 
+        members: unique, 
+        totalCount: unique.length,
+        exactCount: exactCount,
+        groupInfo: {
+          isDynamic: isDynamic,
+          membershipRule: groupInfo?.membershipRule || null,
+          membershipRuleProcessingState: groupInfo?.membershipRuleProcessingState || null,
+          groupTypes: groupInfo?.groupTypes || []
+        }
+      };
       
     } catch (error) {
       logMessage(`fetchAllGroupMembers: Error fetching group members - ${error.message}`);
@@ -1902,10 +1937,24 @@ document.addEventListener("DOMContentLoaded", () => {
         logMessage(`fetchAllGroupMembers: Fallback response: ${JSON.stringify(fallbackRes)}`);
         const fallbackMembers = fallbackRes.value || [];
         
-        const unique = fallbackMembers.filter(m => m['@odata.type'] !== '#microsoft.graph.group');
+        // Include all member types including groups
+        const unique = fallbackMembers;
+        const exactCount = fallbackRes['@odata.count'] || unique.length;
+        const isDynamic = groupInfo?.groupTypes?.includes('DynamicMembership') || false;
+        
         logMessage(`fetchAllGroupMembers: Fallback successful - ${unique.length} direct members`);
         
-        return { members: unique, totalCount: unique.length };
+        return { 
+          members: unique, 
+          totalCount: unique.length,
+          exactCount: exactCount,
+          groupInfo: {
+            isDynamic: isDynamic,
+            membershipRule: groupInfo?.membershipRule || null,
+            membershipRuleProcessingState: groupInfo?.membershipRuleProcessingState || null,
+            groupTypes: groupInfo?.groupTypes || []
+          }
+        };
       } catch (fallbackError) {
         logMessage(`fetchAllGroupMembers: Fallback also failed - ${fallbackError.message}`);
         // Continue to basic fallback approaches
@@ -1926,19 +1975,23 @@ document.addEventListener("DOMContentLoaded", () => {
       logMessage(`fetchAllGroupMembers: Basic request response: ${JSON.stringify(basicRes)}`);
       
       if (basicRes.value && Array.isArray(basicRes.value)) {
-        // Filter out nested groups and return actual members
-        const basicMembers = basicRes.value.filter(m => m['@odata.type'] !== '#microsoft.graph.group');
-        logMessage(`fetchAllGroupMembers: Basic request returned ${basicMembers.length} non-group members out of ${basicRes.value.length} total`);
+        // Include all member types including groups
+        const basicMembers = basicRes.value;
+        logMessage(`fetchAllGroupMembers: Basic request returned ${basicMembers.length} members`);
         
         if (basicMembers.length > 0) {
-          return { members: basicMembers, totalCount: basicMembers.length };
-        } else if (basicRes.value.length > 0) {
-          // All members were groups - this might be a nested group structure
-          logMessage(`fetchAllGroupMembers: All ${basicRes.value.length} members are groups - this appears to be a group containing only other groups`);
+          const exactCount = basicRes['@odata.count'] || basicMembers.length;
+          const isDynamic = groupInfo?.groupTypes?.includes('DynamicMembership') || false;
           return { 
-            members: [], 
-            totalCount: 0,
-            note: `This group contains ${basicRes.value.length} nested groups but no direct user/device members` 
+            members: basicMembers, 
+            totalCount: basicMembers.length,
+            exactCount: exactCount,
+            groupInfo: {
+              isDynamic: isDynamic,
+              membershipRule: groupInfo?.membershipRule || null,
+              membershipRuleProcessingState: groupInfo?.membershipRuleProcessingState || null,
+              groupTypes: groupInfo?.groupTypes || []
+            }
           };
         }
       }
@@ -1957,11 +2010,23 @@ document.addEventListener("DOMContentLoaded", () => {
       logMessage(`fetchAllGroupMembers: Expand request response: ${JSON.stringify(expandRes)}`);
       
       if (expandRes.members && Array.isArray(expandRes.members)) {
-        const expandMembers = expandRes.members.filter(m => m['@odata.type'] !== '#microsoft.graph.group');
-        logMessage(`fetchAllGroupMembers: Expand request returned ${expandMembers.length} non-group members`);
+        // Include all member types including groups
+        const expandMembers = expandRes.members;
+        logMessage(`fetchAllGroupMembers: Expand request returned ${expandMembers.length} members`);
         
         if (expandMembers.length > 0) {
-          return { members: expandMembers, totalCount: expandMembers.length };
+          const isDynamic = groupInfo?.groupTypes?.includes('DynamicMembership') || false;
+          return { 
+            members: expandMembers, 
+            totalCount: expandMembers.length,
+            exactCount: expandMembers.length,
+            groupInfo: {
+              isDynamic: isDynamic,
+              membershipRule: groupInfo?.membershipRule || null,
+              membershipRuleProcessingState: groupInfo?.membershipRuleProcessingState || null,
+              groupTypes: groupInfo?.groupTypes || []
+            }
+          };
         }
       }
     } catch (expandError) {
@@ -1990,7 +2055,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // If we get here, the group truly appears to have no members
-    return { members: [], totalCount: 0 };
+    const isDynamic = groupInfo?.groupTypes?.includes('DynamicMembership') || false;
+    return { 
+      members: [], 
+      totalCount: 0,
+      exactCount: 0,
+      groupInfo: {
+        isDynamic: isDynamic,
+        membershipRule: groupInfo?.membershipRule || null,
+        membershipRuleProcessingState: groupInfo?.membershipRuleProcessingState || null,
+        groupTypes: groupInfo?.groupTypes || []
+      }
+    };
   };
 
   // Handle Checking Group Members
@@ -2018,20 +2094,40 @@ document.addEventListener("DOMContentLoaded", () => {
 
       showProcessingNotification(`Fetching members for group "${groupName}"...`);
 
-      const { members, totalCount, note } = await fetchAllGroupMembers(groupId, token);
+      const { members, totalCount, exactCount, groupInfo, note } = await fetchAllGroupMembers(groupId, token);
 
-      logMessage(`checkGroupMembers: Retrieved ${totalCount} members for group ${groupName}`);
+      logMessage(`checkGroupMembers: Retrieved ${totalCount} members for group ${groupName}, exact count: ${exactCount}, isDynamic: ${groupInfo.isDynamic}`);
+
+      // Cache the group info for use by other features (e.g., Clear members)
+      state.lastCheckedGroup = {
+        groupId: groupId,
+        groupName: groupName,
+        isDynamic: groupInfo.isDynamic,
+        membershipRule: groupInfo.membershipRule
+      };
 
       // Clear other data types from storage
       chrome.storage.local.remove(['lastConfigAssignments','lastAppAssignments','lastComplianceAssignments','lastPwshAssignments']);
       chrome.storage.local.set({ lastGroupMembers: members });
 
-      // Update UI
-      let displayText = `- ${groupName} (${totalCount} members)`;
+      // Update UI - show exact count and group type
+      const groupType = groupInfo.isDynamic ? 'Dynamic' : 'Assigned';
+      let displayText = `- ${groupName} (${exactCount} members, ${groupType})`;
       if (note) {
         displayText += ` - ${note}`;
       }
       document.getElementById('deviceNameDisplay').textContent = displayText;
+
+      // Show/hide dynamic query section
+      const dynamicQuerySection = document.getElementById('dynamicQuerySection');
+      if (dynamicQuerySection) {
+        if (groupInfo.isDynamic && groupInfo.membershipRule) {
+          dynamicQuerySection.style.display = 'block';
+          document.getElementById('dynamicQueryContent').textContent = groupInfo.membershipRule;
+        } else {
+          dynamicQuerySection.style.display = 'none';
+        }
+      }
 
       updateGroupMembersTable(members);
 
@@ -2062,6 +2158,1045 @@ document.addEventListener("DOMContentLoaded", () => {
       showResultNotification(errorMessage, 'error');
     }
   };
+
+  // ══════════════════════════════════════════════════════════════
+  // Bulk Remove Feature
+  // ══════════════════════════════════════════════════════════════
+
+  // State for bulk remove modal
+  const clearMembersState = {
+    selectedGroupId: null,
+    selectedGroupName: null,
+    isGroupDynamic: false,
+    allMembers: [],
+    actionType: null, // 'selected' or 'all'
+    scope: {
+      users: true,
+      devices: true,
+      nestedGroups: false
+    }
+  };
+
+  // Show the bulk remove modal
+  const showClearMembersModal = () => {
+    const modal = document.getElementById('clearMembersModal');
+    modal.style.display = 'flex';
+    
+    // Reset modal state
+    document.getElementById('confirmationSection').style.display = 'none';
+    document.getElementById('progressSection').style.display = 'none';
+    document.getElementById('resultsSection').style.display = 'none';
+    document.querySelector('.clear-action-buttons').style.display = 'flex';
+    document.querySelector('.modal-description').style.display = 'block';
+    
+    // Reset scope checkboxes
+    document.getElementById('scopeUsers').checked = true;
+    document.getElementById('scopeDevices').checked = true;
+    document.getElementById('scopeNestedGroups').checked = false;
+    
+    // Reset typed confirm input
+    document.getElementById('typedConfirmInput').value = '';
+    document.getElementById('typedConfirmSection').style.display = 'none';
+  };
+
+  // Hide the bulk remove modal and reset state
+  const hideClearMembersModal = () => {
+    const modal = document.getElementById('clearMembersModal');
+    modal.style.display = 'none';
+    
+    // Reset modal state
+    clearMembersState.selectedGroupId = null;
+    clearMembersState.selectedGroupName = null;
+    clearMembersState.isGroupDynamic = false;
+    clearMembersState.allMembers = [];
+    clearMembersState.actionType = null;
+    clearMembersState.scope = {
+      users: true,
+      devices: true,
+      nestedGroups: false
+    };
+  };
+
+  // Update member counts in modal
+  const updateMemberCounts = (selectedCount, totalCount) => {
+    const selectedBtn = document.getElementById('clearSelectedMembersBtn');
+    
+    if (selectedCount > 0) {
+      selectedBtn.disabled = false;
+      document.getElementById('selectedMembersCount').textContent = 
+        `${selectedCount} member${selectedCount !== 1 ? 's' : ''} selected`;
+    } else {
+      selectedBtn.disabled = true;
+      document.getElementById('selectedMembersCount').textContent = 'No rows selected';
+    }
+    
+    document.getElementById('allMembersCount').textContent = 
+      `${totalCount} total member${totalCount !== 1 ? 's' : ''}`;
+  };
+
+  // Get selected members from table
+  const getSelectedMembers = () => {
+    const selectedIds = Array.from(state.pagination.selectedRowIds);
+    return clearMembersState.allMembers.filter(member => 
+      selectedIds.includes(`member-${member.id}`)
+    );
+  };
+
+  // Filter members by scope
+  const filterMembersByScope = (members) => {
+    return members.filter(member => {
+      const odataType = member['@odata.type'] || '';
+      
+      if (odataType.includes('#microsoft.graph.user')) {
+        return clearMembersState.scope.users;
+      } else if (odataType.includes('#microsoft.graph.device')) {
+        return clearMembersState.scope.devices;
+      } else if (odataType.includes('#microsoft.graph.group')) {
+        return clearMembersState.scope.nestedGroups;
+      }
+      
+      // Default: include if type is unknown and users are enabled
+      return clearMembersState.scope.users;
+    });
+  };
+
+  const syncScopeFromCheckboxes = () => {
+    clearMembersState.scope.users = document.getElementById('scopeUsers').checked;
+    clearMembersState.scope.devices = document.getElementById('scopeDevices').checked;
+    clearMembersState.scope.nestedGroups = document.getElementById('scopeNestedGroups').checked;
+  };
+
+  const updateConfirmationMessage = () => {
+    const escapeHtml = (text) => {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    };
+
+    const escapedGroupName = escapeHtml(clearMembersState.selectedGroupName);
+    const typedSection = document.getElementById('typedConfirmSection');
+    const confirmBtn = document.getElementById('confirmRemovalBtn');
+    const scopeSelection = document.getElementById('scopeSelection');
+    let message = '';
+
+    if (clearMembersState.actionType === 'selected') {
+      const selectedMembers = getSelectedMembers();
+      const count = selectedMembers.length;
+      message = `You are about to remove <strong>${count} selected member${count !== 1 ? 's' : ''}</strong> from the group "${escapedGroupName}".`;
+      typedSection.style.display = 'none';
+      scopeSelection.style.display = 'none';
+      confirmBtn.disabled = false;
+    } else if (clearMembersState.actionType === 'all') {
+      syncScopeFromCheckboxes();
+      const scopedMembers = filterMembersByScope(clearMembersState.allMembers);
+      const count = scopedMembers.length;
+      message = `You are about to remove <strong>${count} member${count !== 1 ? 's' : ''}</strong> from the group "${escapedGroupName}" based on the selected scope. This action cannot be undone.`;
+      typedSection.style.display = 'block';
+      scopeSelection.style.display = 'flex';
+      confirmBtn.disabled = true;
+    }
+
+    document.getElementById('confirmationMessage').innerHTML = message;
+  };
+
+  // Show confirmation section
+  const showConfirmationSection = (actionType) => {
+    clearMembersState.actionType = actionType;
+    
+    // Hide action buttons
+    document.querySelector('.clear-action-buttons').style.display = 'none';
+    document.querySelector('.modal-description').style.display = 'none';
+    
+    // Show confirmation section
+    document.getElementById('confirmationSection').style.display = 'block';
+
+    document.getElementById('typedConfirmInput').value = '';
+    
+    updateConfirmationMessage();
+  };
+
+  // Validate typed confirmation
+  const validateTypedConfirmation = () => {
+    if (clearMembersState.actionType !== 'all') {
+      return true;
+    }
+    
+    const input = document.getElementById('typedConfirmInput').value;
+    return input === 'REMOVE ALL';
+  };
+
+  // Remove members from group using Graph API
+  const removeMembersFromGroup = async (groupId, memberIds, token) => {
+    const results = {
+      total: memberIds.length,
+      removed: 0,
+      failed: 0,
+      failures: []
+    };
+
+    // Process in batches of 20 (Graph API batch limit)
+    const batchSize = 20;
+    
+    for (let i = 0; i < memberIds.length; i += batchSize) {
+      const batch = memberIds.slice(i, i + batchSize);
+      
+      // Update progress
+      const progress = Math.min(100, Math.round((i / memberIds.length) * 100));
+      document.getElementById('progressBar').style.width = `${progress}%`;
+      document.getElementById('progressDetails').textContent = 
+        `Processing ${Math.min(i + batchSize, memberIds.length)} of ${memberIds.length}...`;
+      
+      // Try batch request first
+      try {
+        // Create a mapping of batch request IDs to member IDs
+        const idMapping = {};
+        const batchRequests = batch.map((memberId, index) => {
+          const requestId = `${i + index}`;
+          idMapping[requestId] = memberId;
+          return {
+            id: requestId,
+            method: 'DELETE',
+            url: `/groups/${groupId}/members/${memberId}/$ref`
+          };
+        });
+
+        const batchResponse = await fetchJSON('https://graph.microsoft.com/v1.0/$batch', {
+          method: 'POST',
+          headers: {
+            'Authorization': token,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ requests: batchRequests })
+        });
+
+        // Process batch responses
+        if (batchResponse.responses) {
+          const throttledMembers = [];
+          for (const response of batchResponse.responses) {
+            if (response.status === 204 || response.status === 200) {
+              results.removed++;
+            } else if (response.status === 429 || response.status === 503) {
+              // Throttled - retry these members individually
+              const memberId = idMapping[response.id];
+              throttledMembers.push(memberId);
+            } else {
+              results.failed++;
+              const memberId = idMapping[response.id];
+              const member = clearMembersState.allMembers.find(m => m.id === memberId);
+              results.failures.push({
+                memberId: memberId || 'Unknown',
+                memberName: member ? (member.displayName || member.userPrincipalName || 'Unknown') : 'Unknown',
+                reason: response.body?.error?.message || `HTTP ${response.status}`
+              });
+            }
+          }
+          
+          // Retry throttled members individually with backoff
+          if (throttledMembers.length > 0) {
+            logMessage(`Retrying ${throttledMembers.length} throttled members individually`);
+            for (const memberId of throttledMembers) {
+              let retries = 0;
+              let success = false;
+              
+              while (retries < 3 && !success) {
+                try {
+                  const deleteUrl = `https://graph.microsoft.com/v1.0/groups/${groupId}/members/${memberId}/$ref`;
+                  const response = await fetch(deleteUrl, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': token }
+                  });
+                  
+                  if (response.ok) {
+                    results.removed++;
+                    success = true;
+                  } else if (response.status === 429 || response.status === 503) {
+                    retries++;
+                    if (retries >= 3) {
+                      results.failed++;
+                      const errorBody = await response.json().catch(() => ({}));
+                      const member = clearMembersState.allMembers.find(m => m.id === memberId);
+                      results.failures.push({
+                        memberId: memberId,
+                        memberName: member ? (member.displayName || member.userPrincipalName || 'Unknown') : 'Unknown',
+                        reason: errorBody?.error?.message || `HTTP ${response.status} (throttled)`
+                      });
+                      break;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, retries * 2000));
+                  } else {
+                    results.failed++;
+                    const errorBody = await response.json().catch(() => ({}));
+                    const member = clearMembersState.allMembers.find(m => m.id === memberId);
+                    results.failures.push({
+                      memberId: memberId,
+                      memberName: member ? (member.displayName || member.userPrincipalName || 'Unknown') : 'Unknown',
+                      reason: errorBody?.error?.message || `HTTP ${response.status}`
+                    });
+                    break;
+                  }
+                } catch (error) {
+                  retries++;
+                  if (retries >= 3) {
+                    results.failed++;
+                    const member = clearMembersState.allMembers.find(m => m.id === memberId);
+                    results.failures.push({
+                      memberId: memberId,
+                      memberName: member ? (member.displayName || member.userPrincipalName || 'Unknown') : 'Unknown',
+                      reason: error.message
+                    });
+                    break;
+                  }
+                  await new Promise(resolve => setTimeout(resolve, retries * 2000));
+                }
+              }
+            }
+          }
+        }
+      } catch (batchError) {
+        logMessage(`Batch removal failed, falling back to individual requests: ${batchError.message}`);
+        
+        // Fallback: individual DELETE requests with retry logic
+        for (const memberId of batch) {
+          let retries = 0;
+          let success = false;
+          
+          while (retries < 3 && !success) {
+            try {
+              const deleteUrl = `https://graph.microsoft.com/v1.0/groups/${groupId}/members/${memberId}/$ref`;
+              const response = await fetch(deleteUrl, {
+                method: 'DELETE',
+                headers: {
+                  'Authorization': token,
+                  'Content-Type': 'application/json'
+                }
+              });
+
+              if (response.status === 204 || response.status === 200) {
+                results.removed++;
+                success = true;
+              } else if (response.status === 429 || response.status === 503) {
+                // Throttling - wait and retry
+                const retryAfter = parseInt(response.headers.get('Retry-After')) || (retries + 1) * 2;
+                logMessage(`Throttled (${response.status}), waiting ${retryAfter}s before retry ${retries + 1}/3`);
+                await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+                retries++;
+              } else {
+                // Other error
+                results.failed++;
+                const errorBody = await response.json().catch(() => ({}));
+                const member = clearMembersState.allMembers.find(m => m.id === memberId);
+                results.failures.push({
+                  memberId: memberId,
+                  memberName: member ? (member.displayName || member.userPrincipalName || 'Unknown') : 'Unknown',
+                  reason: errorBody?.error?.message || `HTTP ${response.status}`
+                });
+                break;
+              }
+            } catch (error) {
+              retries++;
+              if (retries >= 3) {
+                results.failed++;
+                const member = clearMembersState.allMembers.find(m => m.id === memberId);
+                results.failures.push({
+                  memberId: memberId,
+                  memberName: member ? (member.displayName || member.userPrincipalName || 'Unknown') : 'Unknown',
+                  reason: error.message
+                });
+                break;
+              }
+              await new Promise(resolve => setTimeout(resolve, retries * 1000));
+            }
+          }
+        }
+      }
+    }
+
+    // Final progress update
+    document.getElementById('progressBar').style.width = '100%';
+    
+    return results;
+  };
+
+  // Execute the removal
+  const executeRemoval = async () => {
+    // Hide confirmation, show progress
+    document.getElementById('confirmationSection').style.display = 'none';
+    document.getElementById('progressSection').style.display = 'block';
+    
+    // Get members to remove
+    let membersToRemove;
+    if (clearMembersState.actionType === 'selected') {
+      membersToRemove = getSelectedMembers();
+    } else {
+      syncScopeFromCheckboxes();
+      membersToRemove = filterMembersByScope(clearMembersState.allMembers);
+    }
+    
+    if (membersToRemove.length === 0) {
+      showResultsSection({
+        total: 0,
+        removed: 0,
+        failed: 0,
+        failures: []
+      });
+      return;
+    }
+    
+    // Get member IDs
+    const memberIds = membersToRemove.map(m => m.id);
+    
+    document.getElementById('progressMessage').textContent = 
+      `Removing ${memberIds.length} member${memberIds.length !== 1 ? 's' : ''}...`;
+    document.getElementById('progressBar').style.width = '0%';
+    document.getElementById('progressDetails').textContent = 'Initializing...';
+    
+    try {
+      const token = await getToken();
+      const results = await removeMembersFromGroup(
+        clearMembersState.selectedGroupId,
+        memberIds,
+        token
+      );
+      
+      showResultsSection(results);
+      
+      // If we removed members from the currently displayed table, refresh it
+      if (state.currentDisplayType === 'groupMembers') {
+        // Refresh the group members display
+        const { members, totalCount } = await fetchAllGroupMembers(
+          clearMembersState.selectedGroupId,
+          token
+        );
+        chrome.storage.local.set({ lastGroupMembers: members });
+        updateGroupMembersTable(members);
+        
+        // Update display text
+        const displayText = `- ${clearMembersState.selectedGroupName} (${totalCount} members)`;
+        document.getElementById('deviceNameDisplay').textContent = displayText;
+      }
+      
+    } catch (error) {
+      logMessage(`Error during removal: ${error.message}`);
+      showResultsSection({
+        total: memberIds.length,
+        removed: 0,
+        failed: memberIds.length,
+        failures: [{
+          memberId: 'N/A',
+          memberName: 'N/A',
+          reason: error.message
+        }]
+      });
+    }
+  };
+
+  // Show results section
+  const showResultsSection = (results) => {
+    document.getElementById('progressSection').style.display = 'none';
+    document.getElementById('resultsSection').style.display = 'block';
+    
+    // Build summary message
+    let summaryMsg = '';
+    if (results.removed === results.total) {
+      summaryMsg = `✓ Successfully removed all ${results.removed} member${results.removed !== 1 ? 's' : ''}.`;
+    } else if (results.removed > 0) {
+      summaryMsg = `⚠ Partially completed: ${results.removed} removed, ${results.failed} failed.`;
+    } else {
+      summaryMsg = `✗ Failed to remove members.`;
+    }
+    
+    document.getElementById('resultsSummary').textContent = summaryMsg;
+    
+    // Show failure details if any (use textContent to prevent XSS)
+    const detailsDiv = document.getElementById('resultsDetails');
+    detailsDiv.innerHTML = '';
+    
+    if (results.failures && results.failures.length > 0) {
+      results.failures.forEach(failure => {
+        const failureItem = document.createElement('div');
+        failureItem.className = 'failure-item';
+        
+        const nameStrong = document.createElement('strong');
+        nameStrong.textContent = failure.memberName;
+        failureItem.appendChild(nameStrong);
+        failureItem.appendChild(document.createElement('br'));
+        
+        const idSmall = document.createElement('small');
+        idSmall.textContent = `ID: ${failure.memberId}`;
+        failureItem.appendChild(idSmall);
+        failureItem.appendChild(document.createElement('br'));
+        
+        const reasonSmall = document.createElement('small');
+        reasonSmall.textContent = `Reason: ${failure.reason}`;
+        failureItem.appendChild(reasonSmall);
+        
+        detailsDiv.appendChild(failureItem);
+      });
+    }
+  };
+
+  // Handle Bulk Remove button click
+  const handleClearGroupMembers = async () => {
+    logMessage("clearGroupMembers clicked");
+    
+    // Try to use cached group info if we're viewing group members
+    let groupId, groupName;
+    
+    if (state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup) {
+      // Use cached group info from "Check members"
+      groupId = state.lastCheckedGroup.groupId;
+      groupName = state.lastCheckedGroup.groupName;
+      logMessage(`clearGroupMembers: Using cached group - ID: ${groupId}, Name: ${groupName}`);
+    } else {
+      // Fall back to requiring selected group from search results
+      const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
+      if (selected.length !== 1) {
+        showResultNotification('Select exactly one group to clear members.', 'error');
+        return;
+      }
+      groupId = selected[0].value;
+      groupName = selected[0].dataset.groupName;
+      logMessage(`clearGroupMembers: Using selected group - ID: ${groupId}, Name: ${groupName}`);
+    }
+    
+    // Check if group is dynamic
+    if (isDynamicGroup(groupId)) {
+      showResultNotification(
+        'Cannot bulk remove members from dynamic groups. Dynamic membership is managed by Azure AD rules.',
+        'error'
+      );
+      return;
+    }
+
+    logMessage(`clearGroupMembers: Processing group - ID: ${groupId}, Name: ${groupName}`);
+
+    try {
+      const token = await getToken();
+      
+      // Fetch current group members
+      showProcessingNotification(`Loading members for group "${groupName}"...`);
+      
+      const { members, totalCount } = await fetchAllGroupMembers(groupId, token);
+      
+      if (totalCount === 0) {
+        showResultNotification(`Group "${groupName}" has no members to clear.`, 'info');
+        return;
+      }
+      
+      // Store in state
+      clearMembersState.selectedGroupId = groupId;
+      clearMembersState.selectedGroupName = groupName;
+      clearMembersState.isGroupDynamic = false;
+      clearMembersState.allMembers = members;
+      
+      // Show modal
+      document.getElementById('clearMembersGroupName').textContent = 
+        `Group: ${groupName}`;
+      
+      // Update counts
+      const selectedMembers = getSelectedMembers();
+      updateMemberCounts(selectedMembers.length, totalCount);
+      
+      showClearMembersModal();
+      
+      // Hide processing notification
+      showResultNotification('', 'clear');
+      
+    } catch (error) {
+      logMessage(`clearGroupMembers: Error - ${error.message}`);
+      
+      let errorMessage = 'Failed to load group members: ' + error.message;
+      
+      if (error.message.includes('403') || error.message.includes('Forbidden')) {
+        errorMessage = `Access denied. You don't have permission to view or modify members of group "${groupName}".`;
+      } else if (error.message.includes('404') || error.message.includes('Not Found')) {
+        errorMessage = `Group "${groupName}" was not found or has been deleted.`;
+      }
+      
+      showResultNotification(errorMessage, 'error');
+    }
+  };
+
+  // Update the button state based on selected group type
+  const updateClearMembersButtonState = () => {
+    const clearBtn = document.getElementById('clearGroupMembers');
+    
+    // Check if we have a cached group from "Check members"
+    const hasCachedGroup = state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup;
+    
+    // Check if we have a selected group from search results
+    const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
+    const hasSelectedGroup = selected.length === 1;
+    
+    // Button should be enabled if we have either a cached group or a selected group
+    if (hasCachedGroup) {
+      // Check if the cached group is dynamic
+      if (isDynamicGroup(state.lastCheckedGroup.groupId)) {
+        clearBtn.classList.add('disabled');
+        clearBtn.title = 'Only available for Assigned groups. Dynamic membership cannot be manually cleared.';
+      } else {
+        clearBtn.classList.remove('disabled');
+        clearBtn.title = '';
+      }
+      return;
+    }
+    
+    if (hasSelectedGroup) {
+      const groupId = selected[0].value;
+      if (isDynamicGroup(groupId)) {
+        clearBtn.classList.add('disabled');
+        clearBtn.title = 'Only available for Assigned groups. Dynamic membership cannot be manually cleared.';
+      } else {
+        clearBtn.classList.remove('disabled');
+        clearBtn.title = '';
+      }
+      return;
+    }
+    
+    // No cached group and no selected group - button stays enabled but will show error when clicked
+    clearBtn.classList.remove('disabled');
+    clearBtn.title = '';
+  };
+
+  // ══════════════════════════════════════════════════════════════
+  // End of Bulk Remove Feature
+  // ══════════════════════════════════════════════════════════════
+
+  // ══════════════════════════════════════════════════════════════
+  // Bulk Add Members Feature
+  // ══════════════════════════════════════════════════════════════
+
+  // State for bulk add modal
+  const bulkAddState = {
+    selectedGroupId: null,
+    selectedGroupName: null,
+    parsedItems: []
+  };
+
+  // Show the bulk add modal
+  const showBulkAddModal = () => {
+    const modal = document.getElementById('bulkAddModal');
+    modal.style.display = 'flex';
+
+    // Reset modal sections
+    document.getElementById('bulkAddInputSection').style.display = 'block';
+    document.getElementById('bulkAddProgressSection').style.display = 'none';
+    document.getElementById('bulkAddResultsSection').style.display = 'none';
+
+    // Reset input
+    document.getElementById('bulkAddInput').value = '';
+    document.getElementById('bulkAddParsedCount').textContent = '';
+    document.getElementById('confirmBulkAddBtn').disabled = true;
+  };
+
+  // Hide the bulk add modal and reset state
+  const hideBulkAddModal = () => {
+    const modal = document.getElementById('bulkAddModal');
+    modal.style.display = 'none';
+
+    bulkAddState.selectedGroupId = null;
+    bulkAddState.selectedGroupName = null;
+    bulkAddState.parsedItems = [];
+  };
+
+  // Parse bulk input text into an array of items
+  const parseBulkInput = (text) => {
+    if (!text || !text.trim()) return [];
+
+    text = text.trim();
+
+    // Try JSON array: ["a","b","c"] or [{"k":"v"}]
+    if (text.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) {
+          // Flatten objects: extract string values from each element
+          const items = [];
+          for (const item of parsed) {
+            if (typeof item === 'string' && item.trim()) {
+              items.push(item.trim());
+            } else if (typeof item === 'object' && item !== null) {
+              for (const val of Object.values(item)) {
+                if (typeof val === 'string' && val.trim()) {
+                  items.push(val.trim());
+                }
+              }
+            }
+          }
+          if (items.length > 0) return [...new Set(items)];
+        }
+      } catch (e) {
+        // Not valid JSON, continue to other parsers
+      }
+    }
+
+    // Try JSON object / hashtable: {"k":"v"}
+    // Note: PowerShell @{k="v"} syntax is not JSON-compatible and will fall through to line-based parsing
+    let objectText = text;
+    if (objectText.startsWith('@{') && objectText.endsWith('}')) {
+      objectText = objectText.slice(1); // Remove leading @ to try as JSON
+    }
+    if (objectText.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(objectText);
+        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+          const items = [];
+          for (const val of Object.values(parsed)) {
+            if (typeof val === 'string' && val.trim()) {
+              items.push(val.trim());
+            }
+          }
+          if (items.length > 0) return [...new Set(items)];
+        }
+      } catch (e) {
+        // Not valid JSON object, continue
+      }
+    }
+
+    // Split by newlines first
+    let lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+
+    // If single line, try splitting by delimiters (comma, semicolon, tab, pipe)
+    if (lines.length === 1) {
+      const delimited = lines[0].split(/[,;\t|]+/).map(s => s.trim()).filter(s => s.length > 0);
+      if (delimited.length > 1) {
+        return [...new Set(delimited)];
+      }
+    }
+
+    // Multi-line: each line may itself be delimited
+    const items = [];
+    for (const line of lines) {
+      const parts = line.split(/[,;\t|]+/).map(s => s.trim()).filter(s => s.length > 0);
+      items.push(...parts);
+    }
+
+    return [...new Set(items)];
+  };
+
+  // Resolve a single item to a directory object ID
+  const resolveItemToDirectoryId = async (item, token) => {
+    const headers = { "Authorization": token, "Content-Type": "application/json" };
+    // Escape single quotes for OData filter values
+    const escapedItem = item.replace(/'/g, "''");
+
+    // Check if item looks like a GUID
+    const guidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (guidPattern.test(item)) {
+      // Try as directory object ID directly
+      try {
+        const obj = await fetchJSON(`https://graph.microsoft.com/v1.0/directoryObjects/${item}`, {
+          method: "GET", headers
+        });
+        if (obj && obj.id) {
+          return { id: obj.id, displayName: obj.displayName || item, type: obj['@odata.type'] || 'directoryObject' };
+        }
+      } catch (e) {
+        // Not a direct object ID, continue
+      }
+    }
+
+    // Check if item looks like a UPN (contains @)
+    if (item.includes('@')) {
+      try {
+        const userData = await fetchJSON(`https://graph.microsoft.com/v1.0/users?$filter=userPrincipalName eq '${encodeURIComponent(escapedItem)}'&$select=id,displayName,userPrincipalName`, {
+          method: "GET", headers
+        });
+        if (userData.value && userData.value.length > 0) {
+          return { id: userData.value[0].id, displayName: userData.value[0].displayName || item, type: 'user' };
+        }
+      } catch (e) {
+        // Continue to next strategy
+      }
+    }
+
+    // Try as device displayName
+    try {
+      const deviceData = await fetchJSON(`https://graph.microsoft.com/v1.0/devices?$filter=displayName eq '${encodeURIComponent(escapedItem)}'&$select=id,displayName`, {
+        method: "GET", headers
+      });
+      if (deviceData.value && deviceData.value.length > 0) {
+        return { id: deviceData.value[0].id, displayName: deviceData.value[0].displayName || item, type: 'device' };
+      }
+    } catch (e) {
+      // Continue
+    }
+
+    // Try as user displayName
+    try {
+      const userData = await fetchJSON(`https://graph.microsoft.com/v1.0/users?$filter=displayName eq '${encodeURIComponent(escapedItem)}'&$select=id,displayName,userPrincipalName`, {
+        method: "GET", headers
+      });
+      if (userData.value && userData.value.length > 0) {
+        return { id: userData.value[0].id, displayName: userData.value[0].displayName || item, type: 'user' };
+      }
+    } catch (e) {
+      // Continue
+    }
+
+    return null;
+  };
+
+  // Add members to group using Graph API batch requests
+  const addMembersToGroup = async (groupId, memberIds, token) => {
+    const results = {
+      total: memberIds.length,
+      added: 0,
+      failed: 0,
+      failures: []
+    };
+
+    const batchSize = 20;
+
+    for (let i = 0; i < memberIds.length; i += batchSize) {
+      const batch = memberIds.slice(i, i + batchSize);
+
+      const progress = Math.min(100, Math.round(((i + batch.length) / memberIds.length) * 100));
+      document.getElementById('bulkAddProgressBar').style.width = `${progress}%`;
+      document.getElementById('bulkAddProgressDetails').textContent =
+        `Processing ${Math.min(i + batch.length, memberIds.length)} of ${memberIds.length}...`;
+
+      try {
+        const idMapping = {};
+        const batchRequests = batch.map((member, index) => {
+          const requestId = `${i + index}`;
+          idMapping[requestId] = member;
+          return {
+            id: requestId,
+            method: 'POST',
+            url: `/groups/${groupId}/members/$ref`,
+            headers: { 'Content-Type': 'application/json' },
+            body: {
+              '@odata.id': `https://graph.microsoft.com/v1.0/directoryObjects/${member.id}`
+            }
+          };
+        });
+
+        const batchResponse = await fetchJSON('https://graph.microsoft.com/v1.0/$batch', {
+          method: 'POST',
+          headers: {
+            'Authorization': token,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ requests: batchRequests })
+        });
+
+        if (batchResponse.responses) {
+          for (const response of batchResponse.responses) {
+            if (response.status === 204 || response.status === 200 || response.status === 201) {
+              results.added++;
+            } else {
+              results.failed++;
+              const member = idMapping[response.id];
+              results.failures.push({
+                memberName: member ? member.displayName : 'Unknown',
+                reason: response.body?.error?.message || `HTTP ${response.status}`
+              });
+            }
+          }
+        }
+      } catch (batchError) {
+        logMessage(`Bulk add batch failed, falling back to individual requests: ${batchError.message}`);
+
+        for (const member of batch) {
+          try {
+            await fetchJSON(`https://graph.microsoft.com/v1.0/groups/${groupId}/members/$ref`, {
+              method: 'POST',
+              headers: { 'Authorization': token, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                '@odata.id': `https://graph.microsoft.com/v1.0/directoryObjects/${member.id}`
+              })
+            });
+            results.added++;
+          } catch (e) {
+            results.failed++;
+            results.failures.push({
+              memberName: member.displayName || 'Unknown',
+              reason: e.message
+            });
+          }
+        }
+      }
+    }
+
+    document.getElementById('bulkAddProgressBar').style.width = '100%';
+    return results;
+  };
+
+  // Show bulk add results
+  const showBulkAddResults = (results) => {
+    document.getElementById('bulkAddProgressSection').style.display = 'none';
+    document.getElementById('bulkAddResultsSection').style.display = 'block';
+
+    let summaryMsg = '';
+    if (results.added === results.total) {
+      summaryMsg = `✓ Successfully added all ${results.added} member${results.added !== 1 ? 's' : ''}.`;
+    } else if (results.added > 0) {
+      summaryMsg = `⚠ Partially completed: ${results.added} added, ${results.failed} failed.`;
+    } else {
+      summaryMsg = `✗ Failed to add members.`;
+    }
+
+    document.getElementById('bulkAddResultsSummary').textContent = summaryMsg;
+
+    const detailsDiv = document.getElementById('bulkAddResultsDetails');
+    detailsDiv.innerHTML = '';
+
+    if (results.failures && results.failures.length > 0) {
+      results.failures.forEach(failure => {
+        const failureItem = document.createElement('div');
+        failureItem.className = 'failure-item';
+
+        const nameStrong = document.createElement('strong');
+        nameStrong.textContent = failure.memberName;
+        failureItem.appendChild(nameStrong);
+        failureItem.appendChild(document.createElement('br'));
+
+        const reasonSmall = document.createElement('small');
+        reasonSmall.textContent = `Reason: ${failure.reason}`;
+        failureItem.appendChild(reasonSmall);
+
+        detailsDiv.appendChild(failureItem);
+      });
+    }
+  };
+
+  // Execute the bulk add
+  const executeBulkAdd = async () => {
+    document.getElementById('bulkAddInputSection').style.display = 'none';
+    document.getElementById('bulkAddProgressSection').style.display = 'block';
+
+    const items = bulkAddState.parsedItems;
+    document.getElementById('bulkAddProgressMessage').textContent =
+      `Resolving ${items.length} item${items.length !== 1 ? 's' : ''}...`;
+    document.getElementById('bulkAddProgressBar').style.width = '0%';
+    document.getElementById('bulkAddProgressDetails').textContent = 'Resolving identities...';
+
+    try {
+      const token = await getToken();
+
+      // Resolve items to directory object IDs
+      const resolved = [];
+      const unresolved = [];
+
+      for (let i = 0; i < items.length; i++) {
+        const progress = Math.round(((i + 1) / items.length) * 50); // First 50% for resolution
+        document.getElementById('bulkAddProgressBar').style.width = `${progress}%`;
+        document.getElementById('bulkAddProgressDetails').textContent =
+          `Resolving ${i + 1} of ${items.length}: ${items[i]}`;
+
+        const result = await resolveItemToDirectoryId(items[i], token);
+        if (result) {
+          resolved.push(result);
+        } else {
+          unresolved.push(items[i]);
+        }
+      }
+
+      if (resolved.length === 0) {
+        showBulkAddResults({
+          total: items.length,
+          added: 0,
+          failed: items.length,
+          failures: unresolved.map(item => ({
+            memberName: item,
+            reason: 'Could not resolve to a user or device'
+          }))
+        });
+        return;
+      }
+
+      // Add resolved members to the group
+      document.getElementById('bulkAddProgressMessage').textContent =
+        `Adding ${resolved.length} member${resolved.length !== 1 ? 's' : ''} to group...`;
+      document.getElementById('bulkAddProgressBar').style.width = '50%';
+
+      const results = await addMembersToGroup(
+        bulkAddState.selectedGroupId,
+        resolved,
+        token
+      );
+
+      // Append unresolved items to failures (total starts at resolved.length, add unresolved)
+      results.total += unresolved.length;
+      results.failed += unresolved.length;
+      unresolved.forEach(item => {
+        results.failures.push({
+          memberName: item,
+          reason: 'Could not resolve to a user or device'
+        });
+      });
+
+      showBulkAddResults(results);
+
+      // Refresh group members display if applicable
+      if (state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup &&
+          state.lastCheckedGroup.groupId === bulkAddState.selectedGroupId) {
+        const { members, totalCount } = await fetchAllGroupMembers(
+          bulkAddState.selectedGroupId,
+          token
+        );
+        chrome.storage.local.set({ lastGroupMembers: members });
+        updateGroupMembersTable(members);
+
+        const displayText = `- ${bulkAddState.selectedGroupName} (${totalCount} members)`;
+        document.getElementById('deviceNameDisplay').textContent = displayText;
+      }
+
+    } catch (error) {
+      logMessage(`Bulk add error: ${error.message}`);
+      showBulkAddResults({
+        total: items.length,
+        added: 0,
+        failed: items.length,
+        failures: [{
+          memberName: 'N/A',
+          reason: error.message
+        }]
+      });
+    }
+  };
+
+  // Handle Bulk Add Members button click
+  const handleBulkAddMembers = async () => {
+    logMessage("bulkAddMembers clicked");
+
+    // Determine the target group
+    let groupId, groupName;
+
+    if (state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup) {
+      groupId = state.lastCheckedGroup.groupId;
+      groupName = state.lastCheckedGroup.groupName;
+      logMessage(`bulkAddMembers: Using cached group - ID: ${groupId}, Name: ${groupName}`);
+    } else {
+      const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
+      if (selected.length !== 1) {
+        showResultNotification('Select exactly one group to add members to.', 'error');
+        return;
+      }
+      groupId = selected[0].value;
+      groupName = selected[0].dataset.groupName;
+      logMessage(`bulkAddMembers: Using selected group - ID: ${groupId}, Name: ${groupName}`);
+    }
+
+    if (isDynamicGroup(groupId)) {
+      showResultNotification(
+        'Cannot add members to dynamic groups. Dynamic membership is managed by Azure AD rules.',
+        'error'
+      );
+      return;
+    }
+
+    bulkAddState.selectedGroupId = groupId;
+    bulkAddState.selectedGroupName = groupName;
+
+    document.getElementById('bulkAddGroupName').textContent = `Group: ${groupName}`;
+    showBulkAddModal();
+  };
+
+  // ══════════════════════════════════════════════════════════════
+  // End of Bulk Add Members Feature
+  // ══════════════════════════════════════════════════════════════
 
   // Handle Checking Group Assignments in Configurations
   const handleCheckGroupAssignments = async () => {
@@ -3410,7 +4545,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
       try {
-        const result = await fetchJSON('https://graph.microsoft.com/beta/groups', {
+        await fetchJSON('https://graph.microsoft.com/beta/groups', {
           method: 'POST',
           headers: {
             'Authorization': data.msGraphToken,
@@ -3434,33 +4569,789 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
+  // ══════════════════════════════════════════════════════════════
+  // Create Device Group from Users Feature
+  // ══════════════════════════════════════════════════════════════
+
+  // Constants
+  const BIG_GROUP_THRESHOLD = 200;
+  const MAX_FAILURES_TO_DISPLAY = 10;
+
+  // State for create device group feature
+  const createDeviceGroupState = {
+    baseGroupId: null,
+    baseGroupName: null,
+    newGroupName: null,
+    platforms: [],
+    transitive: true,
+    discoveredDevices: [],
+    userCount: 0,
+    cancellationRequested: false
+  };
+
+  // Show the create device group modal
+  const showCreateDeviceGroupModal = () => {
+    const modal = document.getElementById('createDeviceGroupModal');
+    modal.style.display = 'flex';
+
+    // Reset modal sections
+    document.getElementById('createDeviceGroupInputSection').style.display = 'block';
+    document.getElementById('createDeviceGroupProgressSection').style.display = 'none';
+    document.getElementById('createDeviceGroupConfirmSection').style.display = 'none';
+    document.getElementById('createDeviceGroupResultsSection').style.display = 'none';
+
+    // Reset inputs
+    document.getElementById('newDeviceGroupName').value = '';
+    document.getElementById('platformWindows').checked = true;
+    document.getElementById('platformMacOS').checked = false;
+    document.getElementById('platformIOS').checked = false;
+    document.getElementById('platformAndroid').checked = false;
+    document.getElementById('transitiveMembers').checked = true;
+
+    createDeviceGroupState.cancellationRequested = false;
+  };
+
+  // Hide the create device group modal
+  const hideCreateDeviceGroupModal = () => {
+    const modal = document.getElementById('createDeviceGroupModal');
+    modal.style.display = 'none';
+    createDeviceGroupState.cancellationRequested = true;
+  };
+
+  // Handle Create Device Group from Users button click
+  const handleCreateDeviceGroupFromUsers = async () => {
+    logMessage("createDeviceGroupFromUsers clicked");
+
+    // Determine the target group
+    let groupId, groupName;
+
+    if (state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup) {
+      groupId = state.lastCheckedGroup.groupId;
+      groupName = state.lastCheckedGroup.groupName;
+      logMessage(`createDeviceGroupFromUsers: Using cached group - ID: ${groupId}, Name: ${groupName}`);
+    } else {
+      const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
+      if (selected.length !== 1) {
+        showResultNotification('Select exactly one group to create device group from.', 'error');
+        return;
+      }
+      groupId = selected[0].value;
+      groupName = selected[0].dataset.groupName;
+      logMessage(`createDeviceGroupFromUsers: Using selected group - ID: ${groupId}, Name: ${groupName}`);
+    }
+
+    createDeviceGroupState.baseGroupId = groupId;
+    createDeviceGroupState.baseGroupName = groupName;
+
+    // Display group info
+    document.getElementById('createDeviceGroupBaseGroupName').textContent = `Base Group: ${groupName}`;
+    document.getElementById('createDeviceGroupBaseGroupId').textContent = `Object ID: ${groupId}`;
+    
+    showCreateDeviceGroupModal();
+  };
+
+  // Platform normalization mapping - handles both operatingSystem and deviceType values
+  const normalizePlatform = (operatingSystem, deviceType) => {
+    // Try operatingSystem first, fall back to deviceType
+    const value = operatingSystem || deviceType;
+    if (!value) return null;
+    
+    const v = value.toLowerCase();
+    
+    // Check macOS before iOS to avoid matching 'ios' in 'macos'
+    if (v.includes('windows')) return 'Windows';
+    if (v.includes('macos') || v.includes('mac os')) return 'macOS';
+    if (v.includes('ios') || v.includes('iphone') || v.includes('ipad')) return 'iOS';
+    if (v.includes('android')) return 'Android';
+    
+    return null;
+  };
+
+  // Fetch Intune managed devices for a user by primary user UPN
+  const fetchDevicesByPrimaryUser = async (userPrincipalName, token) => {
+    if (!userPrincipalName) {
+      logMessage(`fetchDevicesByPrimaryUser: UPN is ${userPrincipalName} - skipping`);
+      return [];
+    }
+
+    const headers = {
+      "Authorization": token,
+      "Content-Type": "application/json"
+    };
+
+    try {
+      // Use Notes (static value) + activationlockbypasscode (contains UPN) filter
+      // Match the exact URL format that works in the Intune portal
+      const encodedUpn = encodeURIComponent(userPrincipalName);
+      const url = `https://graph.microsoft.com/beta/deviceManagement/managedDevices?$filter=(Notes%20eq%20%27bc3e5c73-e224-4e63-9b2b-0c36784b7e80%27)%20and%20((contains(activationlockbypasscode,%20%27${encodedUpn}%27)))&$select=deviceName,deviceType,azureADDeviceId,id,userPrincipalName&$top=50&$skipToken=Skip=%270%27`;
+      
+      logMessage(`fetchDevicesByPrimaryUser: Fetching devices for UPN: ${userPrincipalName}`);
+      
+      const rawResponse = await fetch(url, { method: 'GET', headers });
+      const responseText = await rawResponse.text();
+      
+      if (!rawResponse.ok) {
+        logMessage(`fetchDevicesByPrimaryUser: HTTP ${rawResponse.status} for ${userPrincipalName}: ${responseText.substring(0, 300)}`);
+        return [];
+      }
+
+      const response = responseText ? JSON.parse(responseText) : {};
+      
+      if (!response.value) {
+        logMessage(`fetchDevicesByPrimaryUser: No 'value' in response for ${userPrincipalName}: ${responseText.substring(0, 300)}`);
+        return [];
+      }
+
+      logMessage(`fetchDevicesByPrimaryUser: Found ${response.value.length} devices for ${userPrincipalName}`);
+      return response.value;
+    } catch (error) {
+      logMessage(`fetchDevicesByPrimaryUser: Error for ${userPrincipalName}: ${error.message}`);
+      return [];
+    }
+  };
+
+  // Execute the create device group workflow
+  const executeCreateDeviceGroup = async () => {
+    // Validate inputs
+    const newGroupName = document.getElementById('newDeviceGroupName').value.trim();
+    if (!newGroupName) {
+      showResultNotification('Please enter a group name.', 'error');
+      return;
+    }
+
+    const selectedPlatforms = [];
+    if (document.getElementById('platformWindows').checked) selectedPlatforms.push('Windows');
+    if (document.getElementById('platformMacOS').checked) selectedPlatforms.push('macOS');
+    if (document.getElementById('platformIOS').checked) selectedPlatforms.push('iOS');
+    if (document.getElementById('platformAndroid').checked) selectedPlatforms.push('Android');
+
+    if (selectedPlatforms.length === 0) {
+      showResultNotification('Please select at least one platform.', 'error');
+      return;
+    }
+
+    const transitive = document.getElementById('transitiveMembers').checked;
+
+    createDeviceGroupState.newGroupName = newGroupName;
+    createDeviceGroupState.platforms = selectedPlatforms;
+    createDeviceGroupState.transitive = transitive;
+
+    // Hide input section, show progress
+    document.getElementById('createDeviceGroupInputSection').style.display = 'none';
+    document.getElementById('createDeviceGroupProgressSection').style.display = 'block';
+    document.getElementById('createDeviceGroupProgressBar').style.width = '0%';
+
+    try {
+      const token = await getToken();
+      
+      // Step 1: Resolve users from base group
+      updateProgress('Resolving group members...', 10);
+      const members = await resolveGroupMembers(createDeviceGroupState.baseGroupId, transitive, token);
+      
+      if (createDeviceGroupState.cancellationRequested) {
+        hideCreateDeviceGroupModal();
+        return;
+      }
+
+      // Filter to users only
+      const users = members.filter(m => m['@odata.type'] === '#microsoft.graph.user');
+      const skippedCounts = {
+        users: users.length,
+        devices: members.filter(m => m['@odata.type'] === '#microsoft.graph.device').length,
+        groups: members.filter(m => m['@odata.type'] === '#microsoft.graph.group').length,
+        servicePrincipals: members.filter(m => m['@odata.type'] === '#microsoft.graph.servicePrincipal').length,
+        other: members.filter(m => !['#microsoft.graph.user', '#microsoft.graph.device', '#microsoft.graph.group', '#microsoft.graph.servicePrincipal'].includes(m['@odata.type'])).length
+      };
+      
+      logMessage(`createDeviceGroup: Found ${users.length} users out of ${members.length} total members`);
+      logMessage(`createDeviceGroup: Member breakdown - Users: ${skippedCounts.users}, Devices: ${skippedCounts.devices}, Groups: ${skippedCounts.groups}, Service Principals: ${skippedCounts.servicePrincipals}, Other: ${skippedCounts.other}`);
+
+      // Step 2: Discover devices
+      updateProgress(`Finding Intune devices for ${users.length} users...`, 30);
+      const allDevices = [];
+      const deviceMap = new Map(); // For deduplication by azureADDeviceId
+
+      for (let i = 0; i < users.length; i++) {
+        if (createDeviceGroupState.cancellationRequested) {
+          hideCreateDeviceGroupModal();
+          return;
+        }
+
+        const user = users[i];
+        const userDevices = await fetchDevicesByPrimaryUser(user.userPrincipalName, token);
+        
+        for (const device of userDevices) {
+          const platform = normalizePlatform(device.operatingSystem, device.deviceType);
+          
+          // Apply platform filter
+          if (platform && selectedPlatforms.includes(platform)) {
+            // Deduplicate by azureADDeviceId (or id if not available)
+            const deviceKey = device.azureADDeviceId || device.id;
+            if (!deviceMap.has(deviceKey)) {
+              deviceMap.set(deviceKey, device);
+              allDevices.push(device);
+            }
+          }
+        }
+
+        // Update progress
+        const progress = 30 + Math.floor((i + 1) / users.length * 40);
+        updateProgress(`Finding devices... (${i + 1}/${users.length} users processed)`, progress);
+      }
+
+      logMessage(`createDeviceGroup: Discovered ${allDevices.length} unique devices`);
+      createDeviceGroupState.discoveredDevices = allDevices;
+      createDeviceGroupState.userCount = users.length; // Save user count for results
+
+      // Step 3: Check if big group confirmation needed
+      if (allDevices.length > BIG_GROUP_THRESHOLD) {
+        showBigGroupConfirmation(allDevices.length);
+        return;
+      }
+
+      // Proceed to create group
+      await createGroupAndAddDevices(token, allDevices);
+
+    } catch (error) {
+      logMessage(`createDeviceGroup: Error - ${error.message}`);
+      showCreateDeviceGroupError(error.message);
+    }
+  };
+
+  // Update progress display
+  const updateProgress = (message, percent) => {
+    document.getElementById('createDeviceGroupProgressMessage').textContent = message;
+    document.getElementById('createDeviceGroupProgressBar').style.width = `${percent}%`;
+    document.getElementById('createDeviceGroupProgressDetails').textContent = '';
+  };
+
+  // Resolve group members (direct or transitive)
+  const resolveGroupMembers = async (groupId, transitive, token) => {
+    const headers = {
+      "Authorization": token,
+      "Content-Type": "application/json",
+      "ConsistencyLevel": "eventual"
+    };
+
+    const selectFields = 'id,displayName,userPrincipalName,deviceId';
+    const endpoint = transitive ? 'transitiveMembers' : 'members';
+    let url = `https://graph.microsoft.com/beta/groups/${groupId}/${endpoint}?$select=${selectFields}&$top=999`;
+
+    const members = [];
+    
+    while (url) {
+      if (createDeviceGroupState.cancellationRequested) {
+        break;
+      }
+
+      const response = await fetchJSON(url, { method: 'GET', headers });
+      if (response.value) {
+        members.push(...response.value);
+      }
+      url = response['@odata.nextLink'] || null;
+    }
+
+    return members;
+  };
+
+  // Show big group confirmation
+  const showBigGroupConfirmation = (deviceCount) => {
+    document.getElementById('createDeviceGroupProgressSection').style.display = 'none';
+    document.getElementById('createDeviceGroupConfirmSection').style.display = 'block';
+    
+    document.getElementById('createDeviceGroupConfirmMessage').textContent = 
+      `You are about to add ${deviceCount} devices to the new group. Continue?`;
+  };
+
+  // Continue after big group confirmation
+  const continueBigGroupCreation = async () => {
+    document.getElementById('createDeviceGroupConfirmSection').style.display = 'none';
+    document.getElementById('createDeviceGroupProgressSection').style.display = 'block';
+
+    try {
+      const token = await getToken();
+      await createGroupAndAddDevices(token, createDeviceGroupState.discoveredDevices);
+    } catch (error) {
+      logMessage(`createDeviceGroup: Error after confirmation - ${error.message}`);
+      showCreateDeviceGroupError(error.message);
+    }
+  };
+
+  // Create the group and add devices
+  const createGroupAndAddDevices = async (token, devices) => {
+    // Step 4: Create the new group
+    updateProgress('Creating Entra group...', 70);
+
+    const platformsStr = createDeviceGroupState.platforms.join(', ');
+    let description = `Created by IACT from base group: ${createDeviceGroupState.baseGroupName} (${createDeviceGroupState.baseGroupId}), source=PrimaryUser, platforms=${platformsStr}, transitive=${createDeviceGroupState.transitive}`;
+    
+    // Truncate description if too long (Graph API limit is 1024 characters)
+    if (description.length > 1024) {
+      description = description.substring(0, 1021) + '...';
+    }
+
+    // Generate mailNickname - ensure it's not empty and add timestamp for uniqueness
+    let mailNickname = createDeviceGroupState.newGroupName.replace(/[^a-zA-Z0-9]/g, '');
+    if (!mailNickname || mailNickname.length === 0) {
+      mailNickname = 'group';
+    }
+    mailNickname = mailNickname.substring(0, 50) + '_' + Date.now().toString().substring(7);
+
+    const groupBody = {
+      displayName: createDeviceGroupState.newGroupName,
+      description: description,
+      mailEnabled: false,
+      mailNickname: mailNickname,
+      securityEnabled: true,
+      groupTypes: [] // Assigned membership
+    };
+
+    let newGroup;
+    try {
+      newGroup = await fetchJSON('https://graph.microsoft.com/v1.0/groups', {
+        method: 'POST',
+        headers: {
+          'Authorization': token,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(groupBody)
+      });
+      logMessage(`createDeviceGroup: Group created with ID ${newGroup.id}`);
+    } catch (error) {
+      throw new Error(`Failed to create group: ${error.message}`);
+    }
+
+    if (createDeviceGroupState.cancellationRequested) {
+      hideCreateDeviceGroupModal();
+      return;
+    }
+
+    // Step 5: Add devices to the group
+    updateProgress(`Adding devices to group...`, 80);
+    
+    const addResults = await addDevicesToGroup(newGroup.id, devices, token);
+
+    // Show results
+    showCreateDeviceGroupResults({
+      groupName: createDeviceGroupState.newGroupName,
+      usersProcessed: createDeviceGroupState.userCount || 0,
+      devicesDiscovered: devices.length,
+      devicesAdded: addResults.added,
+      devicesFailed: addResults.failed,
+      failures: addResults.failures
+    });
+  };
+
+  // Add devices to group with batching
+  const addDevicesToGroup = async (groupId, devices, token) => {
+    const results = {
+      total: devices.length,
+      added: 0,
+      failed: 0,
+      failures: []
+    };
+
+    // First, get the Entra device IDs for the Intune devices
+    const devicesToAdd = [];
+    
+    for (const device of devices) {
+      if (createDeviceGroupState.cancellationRequested) {
+        break;
+      }
+
+      // Use azureADDeviceId to look up the directory object
+      if (device.azureADDeviceId) {
+        try {
+          // Escape single quotes for OData filter values
+          const escapedDeviceId = device.azureADDeviceId.replace(/'/g, "''");
+          const directoryDevice = await fetchJSON(
+            `https://graph.microsoft.com/v1.0/devices?$filter=deviceId eq '${escapedDeviceId}'&$select=id`,
+            {
+              method: 'GET',
+              headers: { 'Authorization': token, 'Content-Type': 'application/json' }
+            }
+          );
+          
+          if (directoryDevice.value && directoryDevice.value.length > 0) {
+            devicesToAdd.push({
+              id: directoryDevice.value[0].id,
+              displayName: device.deviceName || 'Unknown',
+              azureADDeviceId: device.azureADDeviceId
+            });
+          } else {
+            results.failed++;
+            results.failures.push({
+              deviceName: device.deviceName || 'Unknown',
+              reason: 'Device not found in Entra ID'
+            });
+          }
+        } catch (error) {
+          results.failed++;
+          results.failures.push({
+            deviceName: device.deviceName || 'Unknown',
+            reason: error.message
+          });
+        }
+      } else {
+        results.failed++;
+        results.failures.push({
+          deviceName: device.deviceName || 'Unknown',
+          reason: 'No Azure AD Device ID available'
+        });
+      }
+    }
+
+    logMessage(`createDeviceGroup: Resolved ${devicesToAdd.length} devices to add to group`);
+
+    // Batch add devices
+    const batchSize = 20;
+    for (let i = 0; i < devicesToAdd.length; i += batchSize) {
+      if (createDeviceGroupState.cancellationRequested) {
+        break;
+      }
+
+      const batch = devicesToAdd.slice(i, i + batchSize);
+      const progress = 80 + Math.floor((i + batch.length) / devicesToAdd.length * 15);
+      updateProgress(`Adding devices (${Math.min(i + batch.length, devicesToAdd.length)}/${devicesToAdd.length})...`, progress);
+
+      try {
+        const batchRequests = batch.map((device, index) => ({
+          id: `${i + index}`,
+          method: 'POST',
+          url: `/groups/${groupId}/members/$ref`,
+          headers: { 'Content-Type': 'application/json' },
+          body: {
+            '@odata.id': `https://graph.microsoft.com/v1.0/directoryObjects/${device.id}`
+          }
+        }));
+
+        const batchResponse = await fetchJSON('https://graph.microsoft.com/v1.0/$batch', {
+          method: 'POST',
+          headers: {
+            'Authorization': token,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ requests: batchRequests })
+        });
+
+        if (batchResponse.responses) {
+          for (let j = 0; j < batchResponse.responses.length; j++) {
+            const response = batchResponse.responses[j];
+            const device = batch[j];
+            
+            if (response.status === 204 || response.status === 200 || response.status === 201) {
+              results.added++;
+            } else {
+              results.failed++;
+              results.failures.push({
+                deviceName: device.displayName,
+                reason: response.body?.error?.message || `HTTP ${response.status}`
+              });
+            }
+          }
+        }
+      } catch (batchError) {
+        logMessage(`Batch add failed, falling back to individual requests: ${batchError.message}`);
+        
+        // Fallback to individual requests
+        for (const device of batch) {
+          try {
+            await fetchJSON(`https://graph.microsoft.com/v1.0/groups/${groupId}/members/$ref`, {
+              method: 'POST',
+              headers: { 'Authorization': token, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                '@odata.id': `https://graph.microsoft.com/v1.0/directoryObjects/${device.id}`
+              })
+            });
+            results.added++;
+          } catch (e) {
+            results.failed++;
+            results.failures.push({
+              deviceName: device.displayName,
+              reason: e.message
+            });
+          }
+        }
+      }
+    }
+
+    updateProgress('Complete', 100);
+    return results;
+  };
+
+  // Show results
+  const showCreateDeviceGroupResults = (results) => {
+    document.getElementById('createDeviceGroupProgressSection').style.display = 'none';
+    document.getElementById('createDeviceGroupResultsSection').style.display = 'block';
+
+    let summaryMsg = `✓ New group created: ${results.groupName}\n`;
+    summaryMsg += `\nUsers processed: ${results.usersProcessed}`;
+    summaryMsg += `\nDevices discovered: ${results.devicesDiscovered}`;
+    summaryMsg += `\nDevices added successfully: ${results.devicesAdded}`;
+    
+    if (results.devicesFailed > 0) {
+      summaryMsg += `\nFailures: ${results.devicesFailed}`;
+    }
+
+    document.getElementById('createDeviceGroupResultsSummary').textContent = summaryMsg;
+
+    const detailsDiv = document.getElementById('createDeviceGroupResultsDetails');
+    detailsDiv.innerHTML = '';
+
+    if (results.failures && results.failures.length > 0) {
+      const failureTitle = document.createElement('p');
+      failureTitle.style.fontWeight = 'bold';
+      failureTitle.style.marginTop = '16px';
+      failureTitle.textContent = 'Failed devices:';
+      detailsDiv.appendChild(failureTitle);
+
+      // Show first 10 failures
+      const failuresToShow = results.failures.slice(0, MAX_FAILURES_TO_DISPLAY);
+      failuresToShow.forEach(failure => {
+        const failureItem = document.createElement('div');
+        failureItem.className = 'failure-item';
+
+        const nameStrong = document.createElement('strong');
+        nameStrong.textContent = failure.deviceName;
+        failureItem.appendChild(nameStrong);
+        failureItem.appendChild(document.createElement('br'));
+
+        const reasonSmall = document.createElement('small');
+        reasonSmall.textContent = `Reason: ${failure.reason}`;
+        failureItem.appendChild(reasonSmall);
+
+        detailsDiv.appendChild(failureItem);
+      });
+
+      if (results.failures.length > MAX_FAILURES_TO_DISPLAY) {
+        const moreMsg = document.createElement('p');
+        moreMsg.textContent = `... and ${results.failures.length - MAX_FAILURES_TO_DISPLAY} more failures.`;
+        moreMsg.style.fontStyle = 'italic';
+        detailsDiv.appendChild(moreMsg);
+      }
+    }
+  };
+
+  // Show error
+  const showCreateDeviceGroupError = (errorMessage) => {
+    document.getElementById('createDeviceGroupProgressSection').style.display = 'none';
+    document.getElementById('createDeviceGroupResultsSection').style.display = 'block';
+
+    document.getElementById('createDeviceGroupResultsSummary').textContent = 
+      `✗ Failed to create device group: ${errorMessage}`;
+    document.getElementById('createDeviceGroupResultsDetails').innerHTML = '';
+  };
+
+  // ══════════════════════════════════════════════════════════════
+  // End of Create Device Group from Users Feature
+  // ══════════════════════════════════════════════════════════════
+
+  // ── Collect Logs Modal Functions ───────────────────────────────────────
+  
+  // Supported environment variables for log paths
+  const SUPPORTED_VARIABLES = [
+    '%PROGRAMFILES%',
+    '%PROGRAMDATA%',
+    '%PUBLIC%',
+    '%WINDIR%',
+    '%TEMP%',
+    '%TMP%'
+  ];
+
+  // Custom paths storage
+  let customLogPaths = [];
+
+  // Validate path starts with supported variable
+  const validateLogPath = (path) => {
+    const trimmedPath = path.trim();
+    if (!trimmedPath) {
+      return { valid: false, message: 'Path cannot be empty.' };
+    }
+
+    const upperPath = trimmedPath.toUpperCase();
+    const hasValidVariable = SUPPORTED_VARIABLES.some(varName => 
+      upperPath.startsWith(varName)
+    );
+
+    if (!hasValidVariable) {
+      return { 
+        valid: false, 
+        message: `Path must start with one of: ${SUPPORTED_VARIABLES.join(', ')}` 
+      };
+    }
+
+    return { valid: true };
+  };
+
+  // Show Collect Logs modal
+  const showCollectLogsModal = () => {
+    // Reset form
+    document.getElementById('collectLogsAppId').value = '';
+    document.getElementById('logPathPSADT').checked = false;
+    document.getElementById('logPathIME').checked = true;
+    customLogPaths = [];
+    renderCustomPaths();
+    clearInputError('customPathInput');
+    clearInputError('collectLogsAppId');
+
+    // Show modal
+    document.getElementById('collectLogsModal').style.display = 'flex';
+  };
+
+  // Hide Collect Logs modal
+  const hideCollectLogsModal = () => {
+    document.getElementById('collectLogsModal').style.display = 'none';
+  };
+
+  // Add custom path to list
+  const addCustomPath = () => {
+    const input = document.getElementById('customPathInput');
+    const path = input.value.trim();
+
+    if (!path) return;
+
+    const validation = validateLogPath(path);
+    if (!validation.valid) {
+      showInputError('customPathInput', validation.message);
+      return;
+    }
+
+    // Check for duplicates
+    if (customLogPaths.includes(path)) {
+      showInputError('customPathInput', 'This path is already added.');
+      return;
+    }
+
+    customLogPaths.push(path);
+    input.value = '';
+    clearInputError('customPathInput');
+    renderCustomPaths();
+  };
+
+  // Remove custom path from list
+  const removeCustomPath = (index) => {
+    customLogPaths.splice(index, 1);
+    renderCustomPaths();
+  };
+
+  // Render custom paths list
+  const renderCustomPaths = () => {
+    const container = document.getElementById('customPathsList');
+    container.innerHTML = '';
+
+    customLogPaths.forEach((path, index) => {
+      const item = document.createElement('div');
+      item.className = 'custom-path-item';
+      
+      const text = document.createElement('span');
+      text.className = 'custom-path-text';
+      text.textContent = path;
+      
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'btn-remove-path';
+      removeBtn.innerHTML = '<i class="material-icons">delete</i>';
+      removeBtn.onclick = () => removeCustomPath(index);
+      
+      item.appendChild(text);
+      item.appendChild(removeBtn);
+      container.appendChild(item);
+    });
+  };
+
+  // Show input error as tooltip bubble with auto-dismiss
+  const showInputError = (inputId, message) => {
+    const input = document.getElementById(inputId);
+    input.classList.add('error');
+    
+    // Remove existing error tooltip if any
+    const existingError = input.parentElement.querySelector('.collect-logs-error-tooltip');
+    if (existingError) {
+      existingError.remove();
+    }
+    
+    // Add error tooltip
+    const errorTooltip = document.createElement('div');
+    errorTooltip.className = 'collect-logs-error-tooltip';
+    errorTooltip.innerHTML = `<i class="material-icons">error</i><span>${message}</span>`;
+    input.parentElement.appendChild(errorTooltip);
+    
+    // Auto-dismiss after 4 seconds
+    setTimeout(() => {
+      errorTooltip.classList.add('fade-out');
+      setTimeout(() => {
+        errorTooltip.remove();
+        input.classList.remove('error');
+      }, 300); // Wait for fade-out animation to complete
+    }, 4000);
+  };
+
+  // Clear input error
+  const clearInputError = (inputId) => {
+    const input = document.getElementById(inputId);
+    input.classList.remove('error');
+    
+    const errorTooltip = input.parentElement.querySelector('.collect-logs-error-tooltip');
+    if (errorTooltip) {
+      errorTooltip.remove();
+    }
+  };
+
+  // Gather all selected log paths and convert to semicolon-delimited format
+  const gatherLogPaths = () => {
+    const paths = [];
+
+    // Get predefined paths
+    const psadtCheckbox = document.getElementById('logPathPSADT');
+    if (psadtCheckbox.checked) {
+      paths.push(psadtCheckbox.getAttribute('data-path'));
+    }
+
+    const imeCheckbox = document.getElementById('logPathIME');
+    if (imeCheckbox.checked) {
+      paths.push(imeCheckbox.getAttribute('data-path'));
+    }
+
+    // Add custom paths
+    paths.push(...customLogPaths);
+
+    return paths;
+  };
+
   // Handle Collecting Log Files
-  const handleCollectLogs = async () => {
+  const handleCollectLogs = () => {
     logMessage("collectLogs clicked");
+    showCollectLogsModal();
+  };
 
-    // Prompt user for log paths and AppID
-    const logPathsPrompt = "Enter log paths (supported folders: %PROGRAMFILES%, %PROGRAMDATA%, %PUBLIC%, %WINDIR%, %TEMP%, %TMP%). Delimit paths with semicolons (;)";
+  // Confirm and execute log collection
+  const confirmCollectLogs = async () => {
+    logMessage("confirmCollectLogs clicked");
 
-    const logPaths = prompt(logPathsPrompt, "%PROGRAMDATA%\\Microsoft\\IntuneManagementExtension\\Logs\\IntuneManagementExtension.log");
-
-    if (!logPaths) {
-      logMessage("collectLogs: No log paths entered");
-      showResultNotification("Log collection canceled.", "info");
-      return;
-    }
-
-    const appIdPrompt = "Enter Intune Win32 application ID to initialize log collection (recommend using a dummy app ID)";
-    const appId = prompt(appIdPrompt, "");
-
+    // Validate app ID
+    const appId = document.getElementById('collectLogsAppId').value.trim();
     if (!appId) {
-      logMessage("collectLogs: No AppID entered");
-      showResultNotification("AppID is required for log collection.", "error");
+      showInputError('collectLogsAppId', 'Application ID is required.');
       return;
     }
+    clearInputError('collectLogsAppId');
+
+    // Gather log paths
+    const logPathsArray = gatherLogPaths();
+    if (logPathsArray.length === 0) {
+      showResultNotification('Please select or add at least one log path.', 'error');
+      return;
+    }
+
+    // Convert to semicolon-delimited string
+    const logPaths = logPathsArray.join(';');
+
+    // Hide modal and proceed with log collection
+    hideCollectLogsModal();
 
     try {
       const { mdmDeviceId } = await verifyMdmUrl();
       const token = await getToken();
+      
       // Get device data to find the primary user
       const deviceData = await fetchJSON(`https://graph.microsoft.com/beta/deviceManagement/manageddevices('${mdmDeviceId}')`, {
         method: "GET",
@@ -3488,29 +5379,27 @@ document.addEventListener("DOMContentLoaded", () => {
       const userObjectId = userData.value[0].id;
 
       // Format the log paths for the API - with proper escaping
-      const logPathsArray = [];
+      const logPathsFormatted = [];
       logPaths.split(';').forEach(path => {
         const trimmedPath = path.trim();
         if (trimmedPath.length > 0) {
           // Replace single backslashes with double backslashes
-          // But don't stringify yet to avoid extra escaping
           const escapedPath = trimmedPath.replace(/\\/g, '\\\\');
-          logPathsArray.push(`"${escapedPath}"`);
+          logPathsFormatted.push(`"${escapedPath}"`);
         }
       });
 
-      if (logPathsArray.length === 0) {
+      if (logPathsFormatted.length === 0) {
         throw new Error("No valid log paths provided.");
       }
 
       // Create raw JSON string with exactly the format needed
-      // Note: We're manually constructing the JSON to avoid extra escaping by JSON.stringify
       const rawJsonBody = `{
-        "customLogFolders": [${logPathsArray.join(', ')}],
+        "customLogFolders": [${logPathsFormatted.join(', ')}],
         "id": "${userObjectId}_${mdmDeviceId}_${appId}"
       }`;
 
-      logMessage(`collectLogs: Log paths: ${JSON.stringify(logPathsArray)}`);
+      logMessage(`collectLogs: Log paths: ${JSON.stringify(logPathsFormatted)}`);
       logMessage(`collectLogs: Requesting logs for user ${userObjectId}, device ${mdmDeviceId}, app ${appId}`);
 
       // Make the API call
@@ -3570,6 +5459,8 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("removeFromGroups").addEventListener("click", handleRemoveFromGroups);
   document.getElementById("checkGroups").addEventListener("click", handleCheckGroups);
   document.getElementById("checkGroupMembers").addEventListener("click", handleCheckGroupMembers);
+  document.getElementById("clearGroupMembers").addEventListener("click", handleClearGroupMembers);
+  document.getElementById("bulkAddMembers").addEventListener("click", handleBulkAddMembers);
   document.getElementById("checkGroupAssignments").addEventListener("click", handleCheckGroupAssignments);
   document.getElementById("checkCompliance").addEventListener("click", handleCheckCompliance);
   document.getElementById("downloadScript").addEventListener("click", handleDownloadScript);
@@ -3577,6 +5468,140 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("pwshProfiles").addEventListener("click", handlePwshProfiles);
   document.getElementById("collectLogs").addEventListener("click", handleCollectLogs);
   document.getElementById("createGroup").addEventListener("click", handleCreateGroup);
+  
+  // Bulk Remove Modal Event Listeners
+  document.getElementById("clearMembersModalClose").addEventListener("click", hideClearMembersModal);
+  document.getElementById("clearSelectedMembersBtn").addEventListener("click", () => {
+    showConfirmationSection('selected');
+  });
+  document.getElementById("clearAllMembersBtn").addEventListener("click", () => {
+    showConfirmationSection('all');
+  });
+  document.getElementById("scopeUsers").addEventListener("change", () => {
+    if (clearMembersState.actionType === 'all') {
+      updateConfirmationMessage();
+    }
+  });
+  document.getElementById("scopeDevices").addEventListener("change", () => {
+    if (clearMembersState.actionType === 'all') {
+      updateConfirmationMessage();
+    }
+  });
+  document.getElementById("scopeNestedGroups").addEventListener("change", () => {
+    if (clearMembersState.actionType === 'all') {
+      updateConfirmationMessage();
+    }
+  });
+  document.getElementById("typedConfirmInput").addEventListener("input", (e) => {
+    const isValid = e.target.value === 'REMOVE ALL';
+    document.getElementById("confirmRemovalBtn").disabled = !isValid;
+  });
+  document.getElementById("confirmRemovalBtn").addEventListener("click", async () => {
+    if (validateTypedConfirmation()) {
+      await executeRemoval();
+    }
+  });
+  document.getElementById("cancelRemovalBtn").addEventListener("click", () => {
+    // Go back to action selection
+    document.getElementById('confirmationSection').style.display = 'none';
+    document.querySelector('.clear-action-buttons').style.display = 'flex';
+    document.querySelector('.modal-description').style.display = 'block';
+    clearMembersState.actionType = null;
+  });
+  document.getElementById("closeResultsBtn").addEventListener("click", hideClearMembersModal);
+  
+  // Bulk Add Modal Event Listeners
+  document.getElementById("bulkAddModalClose").addEventListener("click", hideBulkAddModal);
+  document.getElementById("bulkAddInput").addEventListener("input", (e) => {
+    const items = parseBulkInput(e.target.value);
+    bulkAddState.parsedItems = items;
+    const count = items.length;
+    document.getElementById('bulkAddParsedCount').textContent =
+      count > 0 ? `${count} item${count !== 1 ? 's' : ''} detected` : '';
+    document.getElementById('confirmBulkAddBtn').disabled = count === 0;
+  });
+  document.getElementById("confirmBulkAddBtn").addEventListener("click", async () => {
+    if (bulkAddState.parsedItems.length > 0) {
+      await executeBulkAdd();
+    }
+  });
+  document.getElementById("cancelBulkAddBtn").addEventListener("click", hideBulkAddModal);
+  document.getElementById("closeBulkAddResultsBtn").addEventListener("click", hideBulkAddModal);
+
+  // Collect Logs Modal Event Listeners
+  document.getElementById("collectLogsModalClose").addEventListener("click", hideCollectLogsModal);
+  document.getElementById("addCustomPathBtn").addEventListener("click", addCustomPath);
+  document.getElementById("customPathInput").addEventListener("keypress", (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addCustomPath();
+    }
+  });
+  document.getElementById("confirmCollectLogsBtn").addEventListener("click", confirmCollectLogs);
+  document.getElementById("cancelCollectLogsBtn").addEventListener("click", hideCollectLogsModal);
+  
+  // Create Device Group from Users Modal Event Listeners
+  document.getElementById("createDeviceGroupFromUsers").addEventListener("click", handleCreateDeviceGroupFromUsers);
+  document.getElementById("createDeviceGroupModalClose").addEventListener("click", hideCreateDeviceGroupModal);
+  document.getElementById("confirmCreateDeviceGroupBtn").addEventListener("click", executeCreateDeviceGroup);
+  document.getElementById("cancelCreateDeviceGroupBtn").addEventListener("click", hideCreateDeviceGroupModal);
+  document.getElementById("cancelCreateDeviceGroupProcessBtn").addEventListener("click", () => {
+    createDeviceGroupState.cancellationRequested = true;
+    hideCreateDeviceGroupModal();
+  });
+  document.getElementById("confirmContinueDeviceGroupBtn").addEventListener("click", continueBigGroupCreation);
+  document.getElementById("cancelConfirmDeviceGroupBtn").addEventListener("click", hideCreateDeviceGroupModal);
+  document.getElementById("closeCreateDeviceGroupResultsBtn").addEventListener("click", hideCreateDeviceGroupModal);
+
+  // Close modal on Escape key
+  document.addEventListener("keydown", (e) => {
+    if (e.key === 'Escape') {
+      const clearModal = document.getElementById('clearMembersModal');
+      if (clearModal && clearModal.style.display === 'flex') {
+        hideClearMembersModal();
+      }
+      
+      const bulkAddModal = document.getElementById('bulkAddModal');
+      if (bulkAddModal && bulkAddModal.style.display === 'flex') {
+        hideBulkAddModal();
+      }
+      
+      const collectLogsModal = document.getElementById('collectLogsModal');
+      if (collectLogsModal && collectLogsModal.style.display === 'flex') {
+        hideCollectLogsModal();
+      }
+
+      const createDeviceGroupModal = document.getElementById('createDeviceGroupModal');
+      if (createDeviceGroupModal && createDeviceGroupModal.style.display === 'flex') {
+        hideCreateDeviceGroupModal();
+      }
+    }
+  });
+  
+  // Close modal when clicking outside the dialog
+  document.getElementById('clearMembersModal').addEventListener('click', (e) => {
+    if (e.target.id === 'clearMembersModal') {
+      hideClearMembersModal();
+    }
+  });
+  
+  document.getElementById('collectLogsModal').addEventListener('click', (e) => {
+    if (e.target.id === 'collectLogsModal') {
+      hideCollectLogsModal();
+    }
+  });
+  
+  document.getElementById('bulkAddModal').addEventListener('click', (e) => {
+    if (e.target.id === 'bulkAddModal') {
+      hideBulkAddModal();
+    }
+  });
+
+  document.getElementById('createDeviceGroupModal').addEventListener('click', (e) => {
+    if (e.target.id === 'createDeviceGroupModal') {
+      hideCreateDeviceGroupModal();
+    }
+  });
   
   document.getElementById("groupResults").addEventListener("change", (event) => {
     if (event.target.type === "checkbox") {

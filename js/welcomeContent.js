@@ -6,51 +6,33 @@
  */
 
 const WELCOME_CONTENT = {
-  // Version 1.3 
-  '1.3': {
-    title: 'Welcome to Intune Admin Center Tools v1.3!',
-    intro: `Thank you for using Intune Admin Center Tools! This extension helps you efficiently manage Intune devices, check assignments, and handle group memberships directly from the Intune Admin Center.`,
+  // Version 1.5.0 - Latest Release
+  '1.5.0': {
+    title: 'Welcome to Intune Admin Center Tools v1.5.0!',
+    intro: `This major release introduces powerful bulk operations, device group creation, and enhanced group member management capabilities for better administration.`,
     changelog: [
-      'NEW: Check group members functionality',
-      'Improved user/device targeting',
-      'Enhanced group management tools',
-      'Better pagination and filtering',
-      'Various bug fixes and performance improvements'
+      'NEW: Bulk Add - Add multiple members to groups at once (paste lists of emails, UPNs, device names)',
+      'NEW: Bulk Remove - Remove members from groups (selected or all)',
+      'NEW: Create Device Group from Users - Automatically create device groups based on users\' primary devices',
+      'NEW: Enhanced Check Members with exact counts for large groups (1000+)',
+      'NEW: Group type indicator (Assigned/Dynamic)',
+      'NEW: Dynamic membership rule display in collapsible section',
+      'NEW: Row selection support in group members table',
+      'IMPROVED: Validation errors now show as auto-dismissing tooltip bubbles',
+      'IMPROVED: Better user experience with more informative displays'
     ],
     features: [
       'Search and manage Azure AD groups',
       'Check device/user configuration assignments',
       'Manage group memberships (add/remove devices and users)',
+      'Bulk Add (NEW) - Add multiple members at once from pasted lists',
+      'Bulk Remove (NEW) - Remove selected or all members',
+      'Create Device Group from Users (NEW) - Auto-create device groups',
+      'Check group members with enhanced details (NEW)',
+      'View exact member counts for large groups (NEW)',
+      'See group type and dynamic rules (NEW)',
       'Check compliance policy assignments',
       'View app assignments',
-      'Dark/Light theme support',
-      'Download PowerShell scripts for automation'
-    ],
-    tips: [
-      'Use Ctrl+Shift+W to show this welcome message anytime',
-      'The extension works on Intune device pages',
-      'Switch between Device and User modes using the toggle buttons',
-      'Filter results using the search boxes for better navigation'
-    ]
-  },
-
-  // Version 1.4 - New features
-  '1.4': {
-    title: 'Welcome to Intune Admin Center Tools v1.4!',
-    intro: `This release adds a streamlined way to review configuration assignments for your groups, along with UX improvements.`,
-    changelog: [
-      'NEW: Check group assignments feature',
-      'NEW: Export table data to CSV',
-      'UI: Freshened user interface for better usability',
-    ],
-    features: [
-      'Search and manage Azure AD groups',
-      'Check device/user configuration assignments',
-      'Manage group memberships (add/remove devices and users)',
-      'Check compliance policy assignments',
-      'View app assignments',
-      'Dark/Light theme support',
-      'Download PowerShell scripts for automation',
       'Check group assignments',
       'Export output tables to CSV (new)'
     ],
@@ -79,19 +61,24 @@ const WELCOME_CONTENT = {
       'Check compliance policy assignments',
       'View app assignments',
       'Dark/Light theme support',
-      'Download PowerShell scripts for automation',
-      'Check group assignments',
-      'Export output tables to CSV (new)'
+      'Download PowerShell scripts for automation'
     ],
     tips: [
       'Use Ctrl+Shift+W to show this welcome message anytime',
       'The extension works on any Intune Admin Center page',
       'Switch between Device and User modes using the toggle buttons',
+      'Click on rows in the group members table to select specific members',
+      'Use "Bulk Add" to paste lists of emails, UPNs, or device names for quick member addition',
+      'Use "Bulk Remove" button to remove members from assigned groups',
+      'Use "Create Device Group" to build a device group from a user group\'s primary devices',
+      'For dynamic groups, expand the membership rule to see the query',
       'Filter results using the search boxes for better navigation',
       'Click the download icon in the pagination area to export the table to CSV'
     ]
   },
 
+  // Previous versions are hidden to keep welcome message focused on latest features
+  
   '1.4.2': {
     title: 'Welcome to Intune Admin Center Tools v1.4.2!',
     intro: `This release fixes an important issue with CSV exports for international users.`,
