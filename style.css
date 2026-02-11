@@ -2,6 +2,7 @@
   --bg-color: #ffffff;
   --text-color: #333333;
   --header-bg: #f7f7f7;
+  --secondary-bg: #f0f2f5;
   --border-color: #eeeeee;
   --table-hover: #f5f5f5;
   --table-stripe: rgba(242, 242, 242, 0.5);
@@ -27,6 +28,7 @@
   --bg-color: #121212;
   --text-color: #e0e0e0;
   --header-bg: #1e1e1e;
+  --secondary-bg: #1b1b1b;
   --border-color: #333333;
   --table-hover: #333333;
   --table-stripe: rgba(60, 60, 60, 0.5);
@@ -503,6 +505,7 @@ table {
   flex-direction: row;
   height: var(--btn-modern-full-width-height);
   gap: var(--grid-gap);
+  padding: 6px 12px;
 }
 
 .full-width i {
