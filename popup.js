@@ -4493,6 +4493,583 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
+  // ══════════════════════════════════════════════════════════════
+  // Create Device Group from Users Feature
+  // ══════════════════════════════════════════════════════════════
+
+  // Constants
+  const BIG_GROUP_THRESHOLD = 200;
+  const MAX_FAILURES_TO_DISPLAY = 10;
+
+  // State for create device group feature
+  const createDeviceGroupState = {
+    baseGroupId: null,
+    baseGroupName: null,
+    newGroupName: null,
+    platforms: [],
+    transitive: true,
+    discoveredDevices: [],
+    userCount: 0,
+    cancellationRequested: false
+  };
+
+  // Show the create device group modal
+  const showCreateDeviceGroupModal = () => {
+    const modal = document.getElementById('createDeviceGroupModal');
+    modal.style.display = 'flex';
+
+    // Reset modal sections
+    document.getElementById('createDeviceGroupInputSection').style.display = 'block';
+    document.getElementById('createDeviceGroupProgressSection').style.display = 'none';
+    document.getElementById('createDeviceGroupConfirmSection').style.display = 'none';
+    document.getElementById('createDeviceGroupResultsSection').style.display = 'none';
+
+    // Reset inputs
+    document.getElementById('newDeviceGroupName').value = '';
+    document.getElementById('platformWindows').checked = true;
+    document.getElementById('platformMacOS').checked = false;
+    document.getElementById('platformIOS').checked = false;
+    document.getElementById('platformAndroid').checked = false;
+    document.getElementById('transitiveMembers').checked = true;
+
+    createDeviceGroupState.cancellationRequested = false;
+  };
+
+  // Hide the create device group modal
+  const hideCreateDeviceGroupModal = () => {
+    const modal = document.getElementById('createDeviceGroupModal');
+    modal.style.display = 'none';
+    createDeviceGroupState.cancellationRequested = true;
+  };
+
+  // Handle Create Device Group from Users button click
+  const handleCreateDeviceGroupFromUsers = async () => {
+    logMessage("createDeviceGroupFromUsers clicked");
+
+    // Determine the target group
+    let groupId, groupName;
+
+    if (state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup) {
+      groupId = state.lastCheckedGroup.groupId;
+      groupName = state.lastCheckedGroup.groupName;
+      logMessage(`createDeviceGroupFromUsers: Using cached group - ID: ${groupId}, Name: ${groupName}`);
+    } else {
+      const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
+      if (selected.length !== 1) {
+        showResultNotification('Select exactly one group to create device group from.', 'error');
+        return;
+      }
+      groupId = selected[0].value;
+      groupName = selected[0].dataset.groupName;
+      logMessage(`createDeviceGroupFromUsers: Using selected group - ID: ${groupId}, Name: ${groupName}`);
+    }
+
+    createDeviceGroupState.baseGroupId = groupId;
+    createDeviceGroupState.baseGroupName = groupName;
+
+    // Display group info
+    document.getElementById('createDeviceGroupBaseGroupName').textContent = `Base Group: ${groupName}`;
+    document.getElementById('createDeviceGroupBaseGroupId').textContent = `Object ID: ${groupId}`;
+    
+    showCreateDeviceGroupModal();
+  };
+
+  // Platform normalization mapping - handles both operatingSystem and deviceType values
+  const normalizePlatform = (operatingSystem, deviceType) => {
+    // Try operatingSystem first, fall back to deviceType
+    const value = operatingSystem || deviceType;
+    if (!value) return null;
+    
+    const v = value.toLowerCase();
+    
+    // Check macOS before iOS to avoid matching 'ios' in 'macos'
+    if (v.includes('windows')) return 'Windows';
+    if (v.includes('macos') || v.includes('mac os')) return 'macOS';
+    if (v.includes('ios') || v.includes('iphone') || v.includes('ipad')) return 'iOS';
+    if (v.includes('android')) return 'Android';
+    
+    return null;
+  };
+
+  // Fetch Intune managed devices for a user by primary user UPN
+  const fetchDevicesByPrimaryUser = async (userPrincipalName, token) => {
+    if (!userPrincipalName) {
+      logMessage(`fetchDevicesByPrimaryUser: UPN is ${userPrincipalName} - skipping`);
+      return [];
+    }
+
+    const headers = {
+      "Authorization": token,
+      "Content-Type": "application/json"
+    };
+
+    try {
+      // Use Notes (static value) + activationlockbypasscode (contains UPN) filter
+      // Match the exact URL format that works in the Intune portal
+      const encodedUpn = encodeURIComponent(userPrincipalName);
+      const url = `https://graph.microsoft.com/beta/deviceManagement/managedDevices?$filter=(Notes%20eq%20%27bc3e5c73-e224-4e63-9b2b-0c36784b7e80%27)%20and%20((contains(activationlockbypasscode,%20%27${encodedUpn}%27)))&$select=deviceName,deviceType,azureADDeviceId,id,userPrincipalName&$top=50&$skipToken=Skip=%270%27`;
+      
+      logMessage(`fetchDevicesByPrimaryUser: Fetching devices for UPN: ${userPrincipalName}`);
+      
+      const rawResponse = await fetch(url, { method: 'GET', headers });
+      const responseText = await rawResponse.text();
+      
+      if (!rawResponse.ok) {
+        logMessage(`fetchDevicesByPrimaryUser: HTTP ${rawResponse.status} for ${userPrincipalName}: ${responseText.substring(0, 300)}`);
+        return [];
+      }
+
+      const response = responseText ? JSON.parse(responseText) : {};
+      
+      if (!response.value) {
+        logMessage(`fetchDevicesByPrimaryUser: No 'value' in response for ${userPrincipalName}: ${responseText.substring(0, 300)}`);
+        return [];
+      }
+
+      logMessage(`fetchDevicesByPrimaryUser: Found ${response.value.length} devices for ${userPrincipalName}`);
+      return response.value;
+    } catch (error) {
+      logMessage(`fetchDevicesByPrimaryUser: Error for ${userPrincipalName}: ${error.message}`);
+      return [];
+    }
+  };
+
+  // Execute the create device group workflow
+  const executeCreateDeviceGroup = async () => {
+    // Validate inputs
+    const newGroupName = document.getElementById('newDeviceGroupName').value.trim();
+    if (!newGroupName) {
+      showResultNotification('Please enter a group name.', 'error');
+      return;
+    }
+
+    const selectedPlatforms = [];
+    if (document.getElementById('platformWindows').checked) selectedPlatforms.push('Windows');
+    if (document.getElementById('platformMacOS').checked) selectedPlatforms.push('macOS');
+    if (document.getElementById('platformIOS').checked) selectedPlatforms.push('iOS');
+    if (document.getElementById('platformAndroid').checked) selectedPlatforms.push('Android');
+
+    if (selectedPlatforms.length === 0) {
+      showResultNotification('Please select at least one platform.', 'error');
+      return;
+    }
+
+    const transitive = document.getElementById('transitiveMembers').checked;
+
+    createDeviceGroupState.newGroupName = newGroupName;
+    createDeviceGroupState.platforms = selectedPlatforms;
+    createDeviceGroupState.transitive = transitive;
+
+    // Hide input section, show progress
+    document.getElementById('createDeviceGroupInputSection').style.display = 'none';
+    document.getElementById('createDeviceGroupProgressSection').style.display = 'block';
+    document.getElementById('createDeviceGroupProgressBar').style.width = '0%';
+
+    try {
+      const token = await getToken();
+      
+      // Step 1: Resolve users from base group
+      updateProgress('Resolving group members...', 10);
+      const members = await resolveGroupMembers(createDeviceGroupState.baseGroupId, transitive, token);
+      
+      if (createDeviceGroupState.cancellationRequested) {
+        hideCreateDeviceGroupModal();
+        return;
+      }
+
+      // Filter to users only
+      const users = members.filter(m => m['@odata.type'] === '#microsoft.graph.user');
+      const skippedCounts = {
+        users: users.length,
+        devices: members.filter(m => m['@odata.type'] === '#microsoft.graph.device').length,
+        groups: members.filter(m => m['@odata.type'] === '#microsoft.graph.group').length,
+        servicePrincipals: members.filter(m => m['@odata.type'] === '#microsoft.graph.servicePrincipal').length,
+        other: members.filter(m => !['#microsoft.graph.user', '#microsoft.graph.device', '#microsoft.graph.group', '#microsoft.graph.servicePrincipal'].includes(m['@odata.type'])).length
+      };
+      
+      logMessage(`createDeviceGroup: Found ${users.length} users out of ${members.length} total members`);
+      logMessage(`createDeviceGroup: Member breakdown - Users: ${skippedCounts.users}, Devices: ${skippedCounts.devices}, Groups: ${skippedCounts.groups}, Service Principals: ${skippedCounts.servicePrincipals}, Other: ${skippedCounts.other}`);
+
+      // Step 2: Discover devices
+      updateProgress(`Finding Intune devices for ${users.length} users...`, 30);
+      const allDevices = [];
+      const deviceMap = new Map(); // For deduplication by azureADDeviceId
+
+      for (let i = 0; i < users.length; i++) {
+        if (createDeviceGroupState.cancellationRequested) {
+          hideCreateDeviceGroupModal();
+          return;
+        }
+
+        const user = users[i];
+        const userDevices = await fetchDevicesByPrimaryUser(user.userPrincipalName, token);
+        
+        for (const device of userDevices) {
+          const platform = normalizePlatform(device.operatingSystem, device.deviceType);
+          
+          // Apply platform filter
+          if (platform && selectedPlatforms.includes(platform)) {
+            // Deduplicate by azureADDeviceId (or id if not available)
+            const deviceKey = device.azureADDeviceId || device.id;
+            if (!deviceMap.has(deviceKey)) {
+              deviceMap.set(deviceKey, device);
+              allDevices.push(device);
+            }
+          }
+        }
+
+        // Update progress
+        const progress = 30 + Math.floor((i + 1) / users.length * 40);
+        updateProgress(`Finding devices... (${i + 1}/${users.length} users processed)`, progress);
+      }
+
+      logMessage(`createDeviceGroup: Discovered ${allDevices.length} unique devices`);
+      createDeviceGroupState.discoveredDevices = allDevices;
+      createDeviceGroupState.userCount = users.length; // Save user count for results
+
+      // Step 3: Check if big group confirmation needed
+      if (allDevices.length > BIG_GROUP_THRESHOLD) {
+        showBigGroupConfirmation(allDevices.length);
+        return;
+      }
+
+      // Proceed to create group
+      await createGroupAndAddDevices(token, allDevices);
+
+    } catch (error) {
+      logMessage(`createDeviceGroup: Error - ${error.message}`);
+      showCreateDeviceGroupError(error.message);
+    }
+  };
+
+  // Update progress display
+  const updateProgress = (message, percent) => {
+    document.getElementById('createDeviceGroupProgressMessage').textContent = message;
+    document.getElementById('createDeviceGroupProgressBar').style.width = `${percent}%`;
+    document.getElementById('createDeviceGroupProgressDetails').textContent = '';
+  };
+
+  // Resolve group members (direct or transitive)
+  const resolveGroupMembers = async (groupId, transitive, token) => {
+    const headers = {
+      "Authorization": token,
+      "Content-Type": "application/json",
+      "ConsistencyLevel": "eventual"
+    };
+
+    const selectFields = 'id,displayName,userPrincipalName,deviceId';
+    const endpoint = transitive ? 'transitiveMembers' : 'members';
+    let url = `https://graph.microsoft.com/beta/groups/${groupId}/${endpoint}?$select=${selectFields}&$top=999`;
+
+    const members = [];
+    
+    while (url) {
+      if (createDeviceGroupState.cancellationRequested) {
+        break;
+      }
+
+      const response = await fetchJSON(url, { method: 'GET', headers });
+      if (response.value) {
+        members.push(...response.value);
+      }
+      url = response['@odata.nextLink'] || null;
+    }
+
+    return members;
+  };
+
+  // Show big group confirmation
+  const showBigGroupConfirmation = (deviceCount) => {
+    document.getElementById('createDeviceGroupProgressSection').style.display = 'none';
+    document.getElementById('createDeviceGroupConfirmSection').style.display = 'block';
+    
+    document.getElementById('createDeviceGroupConfirmMessage').textContent = 
+      `You are about to add ${deviceCount} devices to the new group. Continue?`;
+  };
+
+  // Continue after big group confirmation
+  const continueBigGroupCreation = async () => {
+    document.getElementById('createDeviceGroupConfirmSection').style.display = 'none';
+    document.getElementById('createDeviceGroupProgressSection').style.display = 'block';
+
+    try {
+      const token = await getToken();
+      await createGroupAndAddDevices(token, createDeviceGroupState.discoveredDevices);
+    } catch (error) {
+      logMessage(`createDeviceGroup: Error after confirmation - ${error.message}`);
+      showCreateDeviceGroupError(error.message);
+    }
+  };
+
+  // Create the group and add devices
+  const createGroupAndAddDevices = async (token, devices) => {
+    // Step 4: Create the new group
+    updateProgress('Creating Entra group...', 70);
+
+    const platformsStr = createDeviceGroupState.platforms.join(', ');
+    let description = `Created by IACT from base group: ${createDeviceGroupState.baseGroupName} (${createDeviceGroupState.baseGroupId}), source=PrimaryUser, platforms=${platformsStr}, transitive=${createDeviceGroupState.transitive}`;
+    
+    // Truncate description if too long (Graph API limit is 1024 characters)
+    if (description.length > 1024) {
+      description = description.substring(0, 1021) + '...';
+    }
+
+    // Generate mailNickname - ensure it's not empty and add timestamp for uniqueness
+    let mailNickname = createDeviceGroupState.newGroupName.replace(/[^a-zA-Z0-9]/g, '');
+    if (!mailNickname || mailNickname.length === 0) {
+      mailNickname = 'group';
+    }
+    mailNickname = mailNickname.substring(0, 50) + '_' + Date.now().toString().substring(7);
+
+    const groupBody = {
+      displayName: createDeviceGroupState.newGroupName,
+      description: description,
+      mailEnabled: false,
+      mailNickname: mailNickname,
+      securityEnabled: true,
+      groupTypes: [] // Assigned membership
+    };
+
+    let newGroup;
+    try {
+      newGroup = await fetchJSON('https://graph.microsoft.com/v1.0/groups', {
+        method: 'POST',
+        headers: {
+          'Authorization': token,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(groupBody)
+      });
+      logMessage(`createDeviceGroup: Group created with ID ${newGroup.id}`);
+    } catch (error) {
+      throw new Error(`Failed to create group: ${error.message}`);
+    }
+
+    if (createDeviceGroupState.cancellationRequested) {
+      hideCreateDeviceGroupModal();
+      return;
+    }
+
+    // Step 5: Add devices to the group
+    updateProgress(`Adding devices to group...`, 80);
+    
+    const addResults = await addDevicesToGroup(newGroup.id, devices, token);
+
+    // Show results
+    showCreateDeviceGroupResults({
+      groupName: createDeviceGroupState.newGroupName,
+      usersProcessed: createDeviceGroupState.userCount || 0,
+      devicesDiscovered: devices.length,
+      devicesAdded: addResults.added,
+      devicesFailed: addResults.failed,
+      failures: addResults.failures
+    });
+  };
+
+  // Add devices to group with batching
+  const addDevicesToGroup = async (groupId, devices, token) => {
+    const results = {
+      total: devices.length,
+      added: 0,
+      failed: 0,
+      failures: []
+    };
+
+    // First, get the Entra device IDs for the Intune devices
+    const devicesToAdd = [];
+    
+    for (const device of devices) {
+      if (createDeviceGroupState.cancellationRequested) {
+        break;
+      }
+
+      // Use azureADDeviceId to look up the directory object
+      if (device.azureADDeviceId) {
+        try {
+          // Escape single quotes for OData filter values
+          const escapedDeviceId = device.azureADDeviceId.replace(/'/g, "''");
+          const directoryDevice = await fetchJSON(
+            `https://graph.microsoft.com/v1.0/devices?$filter=deviceId eq '${escapedDeviceId}'&$select=id`,
+            {
+              method: 'GET',
+              headers: { 'Authorization': token, 'Content-Type': 'application/json' }
+            }
+          );
+          
+          if (directoryDevice.value && directoryDevice.value.length > 0) {
+            devicesToAdd.push({
+              id: directoryDevice.value[0].id,
+              displayName: device.deviceName || 'Unknown',
+              azureADDeviceId: device.azureADDeviceId
+            });
+          } else {
+            results.failed++;
+            results.failures.push({
+              deviceName: device.deviceName || 'Unknown',
+              reason: 'Device not found in Entra ID'
+            });
+          }
+        } catch (error) {
+          results.failed++;
+          results.failures.push({
+            deviceName: device.deviceName || 'Unknown',
+            reason: error.message
+          });
+        }
+      } else {
+        results.failed++;
+        results.failures.push({
+          deviceName: device.deviceName || 'Unknown',
+          reason: 'No Azure AD Device ID available'
+        });
+      }
+    }
+
+    logMessage(`createDeviceGroup: Resolved ${devicesToAdd.length} devices to add to group`);
+
+    // Batch add devices
+    const batchSize = 20;
+    for (let i = 0; i < devicesToAdd.length; i += batchSize) {
+      if (createDeviceGroupState.cancellationRequested) {
+        break;
+      }
+
+      const batch = devicesToAdd.slice(i, i + batchSize);
+      const progress = 80 + Math.floor((i + batch.length) / devicesToAdd.length * 15);
+      updateProgress(`Adding devices (${Math.min(i + batch.length, devicesToAdd.length)}/${devicesToAdd.length})...`, progress);
+
+      try {
+        const batchRequests = batch.map((device, index) => ({
+          id: `${i + index}`,
+          method: 'POST',
+          url: `/groups/${groupId}/members/$ref`,
+          headers: { 'Content-Type': 'application/json' },
+          body: {
+            '@odata.id': `https://graph.microsoft.com/v1.0/directoryObjects/${device.id}`
+          }
+        }));
+
+        const batchResponse = await fetchJSON('https://graph.microsoft.com/v1.0/$batch', {
+          method: 'POST',
+          headers: {
+            'Authorization': token,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ requests: batchRequests })
+        });
+
+        if (batchResponse.responses) {
+          for (let j = 0; j < batchResponse.responses.length; j++) {
+            const response = batchResponse.responses[j];
+            const device = batch[j];
+            
+            if (response.status === 204 || response.status === 200 || response.status === 201) {
+              results.added++;
+            } else {
+              results.failed++;
+              results.failures.push({
+                deviceName: device.displayName,
+                reason: response.body?.error?.message || `HTTP ${response.status}`
+              });
+            }
+          }
+        }
+      } catch (batchError) {
+        logMessage(`Batch add failed, falling back to individual requests: ${batchError.message}`);
+        
+        // Fallback to individual requests
+        for (const device of batch) {
+          try {
+            await fetchJSON(`https://graph.microsoft.com/v1.0/groups/${groupId}/members/$ref`, {
+              method: 'POST',
+              headers: { 'Authorization': token, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                '@odata.id': `https://graph.microsoft.com/v1.0/directoryObjects/${device.id}`
+              })
+            });
+            results.added++;
+          } catch (e) {
+            results.failed++;
+            results.failures.push({
+              deviceName: device.displayName,
+              reason: e.message
+            });
+          }
+        }
+      }
+    }
+
+    updateProgress('Complete', 100);
+    return results;
+  };
+
+  // Show results
+  const showCreateDeviceGroupResults = (results) => {
+    document.getElementById('createDeviceGroupProgressSection').style.display = 'none';
+    document.getElementById('createDeviceGroupResultsSection').style.display = 'block';
+
+    let summaryMsg = `✓ New group created: ${results.groupName}\n`;
+    summaryMsg += `\nUsers processed: ${results.usersProcessed}`;
+    summaryMsg += `\nDevices discovered: ${results.devicesDiscovered}`;
+    summaryMsg += `\nDevices added successfully: ${results.devicesAdded}`;
+    
+    if (results.devicesFailed > 0) {
+      summaryMsg += `\nFailures: ${results.devicesFailed}`;
+    }
+
+    document.getElementById('createDeviceGroupResultsSummary').textContent = summaryMsg;
+
+    const detailsDiv = document.getElementById('createDeviceGroupResultsDetails');
+    detailsDiv.innerHTML = '';
+
+    if (results.failures && results.failures.length > 0) {
+      const failureTitle = document.createElement('p');
+      failureTitle.style.fontWeight = 'bold';
+      failureTitle.style.marginTop = '16px';
+      failureTitle.textContent = 'Failed devices:';
+      detailsDiv.appendChild(failureTitle);
+
+      // Show first 10 failures
+      const failuresToShow = results.failures.slice(0, MAX_FAILURES_TO_DISPLAY);
+      failuresToShow.forEach(failure => {
+        const failureItem = document.createElement('div');
+        failureItem.className = 'failure-item';
+
+        const nameStrong = document.createElement('strong');
+        nameStrong.textContent = failure.deviceName;
+        failureItem.appendChild(nameStrong);
+        failureItem.appendChild(document.createElement('br'));
+
+        const reasonSmall = document.createElement('small');
+        reasonSmall.textContent = `Reason: ${failure.reason}`;
+        failureItem.appendChild(reasonSmall);
+
+        detailsDiv.appendChild(failureItem);
+      });
+
+      if (results.failures.length > MAX_FAILURES_TO_DISPLAY) {
+        const moreMsg = document.createElement('p');
+        moreMsg.textContent = `... and ${results.failures.length - MAX_FAILURES_TO_DISPLAY} more failures.`;
+        moreMsg.style.fontStyle = 'italic';
+        detailsDiv.appendChild(moreMsg);
+      }
+    }
+  };
+
+  // Show error
+  const showCreateDeviceGroupError = (errorMessage) => {
+    document.getElementById('createDeviceGroupProgressSection').style.display = 'none';
+    document.getElementById('createDeviceGroupResultsSection').style.display = 'block';
+
+    document.getElementById('createDeviceGroupResultsSummary').textContent = 
+      `✗ Failed to create device group: ${errorMessage}`;
+    document.getElementById('createDeviceGroupResultsDetails').innerHTML = '';
+  };
+
+  // ══════════════════════════════════════════════════════════════
+  // End of Create Device Group from Users Feature
+  // ══════════════════════════════════════════════════════════════
+
   // ── Collect Logs Modal Functions ───────────────────────────────────────
   
   // Supported environment variables for log paths
@@ -4849,6 +5426,19 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("confirmCollectLogsBtn").addEventListener("click", confirmCollectLogs);
   document.getElementById("cancelCollectLogsBtn").addEventListener("click", hideCollectLogsModal);
   
+  // Create Device Group from Users Modal Event Listeners
+  document.getElementById("createDeviceGroupFromUsers").addEventListener("click", handleCreateDeviceGroupFromUsers);
+  document.getElementById("createDeviceGroupModalClose").addEventListener("click", hideCreateDeviceGroupModal);
+  document.getElementById("confirmCreateDeviceGroupBtn").addEventListener("click", executeCreateDeviceGroup);
+  document.getElementById("cancelCreateDeviceGroupBtn").addEventListener("click", hideCreateDeviceGroupModal);
+  document.getElementById("cancelCreateDeviceGroupProcessBtn").addEventListener("click", () => {
+    createDeviceGroupState.cancellationRequested = true;
+    hideCreateDeviceGroupModal();
+  });
+  document.getElementById("confirmContinueDeviceGroupBtn").addEventListener("click", continueBigGroupCreation);
+  document.getElementById("cancelConfirmDeviceGroupBtn").addEventListener("click", hideCreateDeviceGroupModal);
+  document.getElementById("closeCreateDeviceGroupResultsBtn").addEventListener("click", hideCreateDeviceGroupModal);
+
   // Close modal on Escape key
   document.addEventListener("keydown", (e) => {
     if (e.key === 'Escape') {
@@ -4865,6 +5455,11 @@ document.addEventListener("DOMContentLoaded", () => {
       const collectLogsModal = document.getElementById('collectLogsModal');
       if (collectLogsModal && collectLogsModal.style.display === 'flex') {
         hideCollectLogsModal();
+      }
+
+      const createDeviceGroupModal = document.getElementById('createDeviceGroupModal');
+      if (createDeviceGroupModal && createDeviceGroupModal.style.display === 'flex') {
+        hideCreateDeviceGroupModal();
       }
     }
   });
@@ -4885,6 +5480,12 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById('bulkAddModal').addEventListener('click', (e) => {
     if (e.target.id === 'bulkAddModal') {
       hideBulkAddModal();
+    }
+  });
+
+  document.getElementById('createDeviceGroupModal').addEventListener('click', (e) => {
+    if (e.target.id === 'createDeviceGroupModal') {
+      hideCreateDeviceGroupModal();
     }
   });
   
