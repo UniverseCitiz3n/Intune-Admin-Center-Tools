@@ -5891,6 +5891,7 @@ document.addEventListener("DOMContentLoaded", () => {
           if (disabled) {
             showNotification('Analytics disabled. Usage data will no longer be collected.', 'info');
           }
+          // Note: disable() returns false only for beta, which is already handled above
         } else {
           await Analytics.enable();
           showNotification('Analytics enabled. Thank you for helping shape the roadmap!', 'success');

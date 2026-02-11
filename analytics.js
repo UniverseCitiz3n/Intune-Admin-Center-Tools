@@ -54,6 +54,7 @@ const Analytics = (() => {
         analyticsEnabled = true;
       } else {
         analyticsEnabled = false;
+        // Log only if user has explicitly opted out (vs never set)
         if (data.analyticsEnabled === false) {
           console.log('[Analytics] User has opted out of analytics');
         }
