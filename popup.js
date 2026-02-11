@@ -4574,38 +4574,62 @@ document.addEventListener("DOMContentLoaded", () => {
     showCreateDeviceGroupModal();
   };
 
-  // Platform normalization mapping
-  const normalizePlatform = (operatingSystem) => {
-    if (!operatingSystem) return null;
+  // Platform normalization mapping - handles both operatingSystem and deviceType values
+  const normalizePlatform = (operatingSystem, deviceType) => {
+    // Try operatingSystem first, fall back to deviceType
+    const value = operatingSystem || deviceType;
+    if (!value) return null;
     
-    const os = operatingSystem.toLowerCase();
+    const v = value.toLowerCase();
     
     // Check macOS before iOS to avoid matching 'ios' in 'macos'
-    if (os.includes('windows')) return 'Windows';
-    if (os.includes('macos') || os.includes('mac os')) return 'macOS';
-    if (os.includes('ios') || os.includes('ipad')) return 'iOS';
-    if (os.includes('android')) return 'Android';
+    if (v.includes('windows')) return 'Windows';
+    if (v.includes('macos') || v.includes('mac os')) return 'macOS';
+    if (v.includes('ios') || v.includes('iphone') || v.includes('ipad')) return 'iOS';
+    if (v.includes('android')) return 'Android';
     
     return null;
   };
 
-  // Fetch Intune managed devices for a user by primary user
-  const fetchDevicesByPrimaryUser = async (userId, token) => {
+  // Fetch Intune managed devices for a user by primary user UPN
+  const fetchDevicesByPrimaryUser = async (userPrincipalName, token) => {
+    if (!userPrincipalName) {
+      logMessage(`fetchDevicesByPrimaryUser: UPN is ${userPrincipalName} - skipping`);
+      return [];
+    }
+
     const headers = {
       "Authorization": token,
       "Content-Type": "application/json"
     };
 
     try {
-      // Escape single quotes for OData filter values
-      const escapedUserId = userId.replace(/'/g, "''");
-      // Use $filter to query for devices where userId_in_primaryUser matches
-      const url = `https://graph.microsoft.com/beta/deviceManagement/managedDevices?$filter=userId eq '${escapedUserId}'&$select=id,deviceName,operatingSystem,azureADDeviceId,userId`;
-      const response = await fetchJSON(url, { method: 'GET', headers });
+      // Use Notes (static value) + activationlockbypasscode (contains UPN) filter
+      // Match the exact URL format that works in the Intune portal
+      const encodedUpn = encodeURIComponent(userPrincipalName);
+      const url = `https://graph.microsoft.com/beta/deviceManagement/managedDevices?$filter=(Notes%20eq%20%27bc3e5c73-e224-4e63-9b2b-0c36784b7e80%27)%20and%20((contains(activationlockbypasscode,%20%27${encodedUpn}%27)))&$select=deviceName,deviceType,azureADDeviceId,id,userPrincipalName&$top=50&$skipToken=Skip=%270%27`;
       
-      return response.value || [];
+      logMessage(`fetchDevicesByPrimaryUser: Fetching devices for UPN: ${userPrincipalName}`);
+      
+      const rawResponse = await fetch(url, { method: 'GET', headers });
+      const responseText = await rawResponse.text();
+      
+      if (!rawResponse.ok) {
+        logMessage(`fetchDevicesByPrimaryUser: HTTP ${rawResponse.status} for ${userPrincipalName}: ${responseText.substring(0, 300)}`);
+        return [];
+      }
+
+      const response = responseText ? JSON.parse(responseText) : {};
+      
+      if (!response.value) {
+        logMessage(`fetchDevicesByPrimaryUser: No 'value' in response for ${userPrincipalName}: ${responseText.substring(0, 300)}`);
+        return [];
+      }
+
+      logMessage(`fetchDevicesByPrimaryUser: Found ${response.value.length} devices for ${userPrincipalName}`);
+      return response.value;
     } catch (error) {
-      logMessage(`fetchDevicesByPrimaryUser: Error fetching devices for user ${userId}: ${error.message}`);
+      logMessage(`fetchDevicesByPrimaryUser: Error for ${userPrincipalName}: ${error.message}`);
       return [];
     }
   };
@@ -4678,10 +4702,10 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         const user = users[i];
-        const userDevices = await fetchDevicesByPrimaryUser(user.id, token);
+        const userDevices = await fetchDevicesByPrimaryUser(user.userPrincipalName, token);
         
         for (const device of userDevices) {
-          const platform = normalizePlatform(device.operatingSystem);
+          const platform = normalizePlatform(device.operatingSystem, device.deviceType);
           
           // Apply platform filter
           if (platform && selectedPlatforms.includes(platform)) {
