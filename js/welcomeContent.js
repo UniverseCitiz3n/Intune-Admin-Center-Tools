@@ -9,9 +9,11 @@ const WELCOME_CONTENT = {
   // Version 1.5.0 - Latest Release
   '1.5.0': {
     title: 'Welcome to Intune Admin Center Tools v1.5.0!',
-    intro: `This major release introduces powerful group member management capabilities and enhanced information display for better administration.`,
+    intro: `This major release introduces powerful bulk operations, device group creation, and enhanced group member management capabilities for better administration.`,
     changelog: [
+      'NEW: Bulk Add - Add multiple members to groups at once (paste lists of emails, UPNs, device names)',
       'NEW: Bulk Remove - Remove members from groups (selected or all)',
+      'NEW: Create Device Group from Users - Automatically create device groups based on users\' primary devices',
       'NEW: Enhanced Check Members with exact counts for large groups (1000+)',
       'NEW: Group type indicator (Assigned/Dynamic)',
       'NEW: Dynamic membership rule display in collapsible section',
@@ -23,7 +25,9 @@ const WELCOME_CONTENT = {
       'Search and manage Azure AD groups',
       'Check device/user configuration assignments',
       'Manage group memberships (add/remove devices and users)',
-      'Bulk remove (NEW) - Remove selected or all members',
+      'Bulk Add (NEW) - Add multiple members at once from pasted lists',
+      'Bulk Remove (NEW) - Remove selected or all members',
+      'Create Device Group from Users (NEW) - Auto-create device groups',
       'Check group members with enhanced details (NEW)',
       'View exact member counts for large groups (NEW)',
       'See group type and dynamic rules (NEW)',
@@ -39,7 +43,9 @@ const WELCOME_CONTENT = {
       'The extension works on any Intune Admin Center page',
       'Switch between Device and User modes using the toggle buttons',
       'Click on rows in the group members table to select specific members',
-      'Use the "Bulk Remove" button to remove members from assigned groups',
+      'Use "Bulk Add" to paste lists of emails, UPNs, or device names for quick member addition',
+      'Use "Bulk Remove" button to remove members from assigned groups',
+      'Use "Create Device Group" to build a device group from a user group\'s primary devices',
       'For dynamic groups, expand the membership rule to see the query',
       'Filter results using the search boxes for better navigation',
       'Click the download icon in the pagination area to export the table to CSV'
