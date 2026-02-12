@@ -5204,8 +5204,11 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     try {
+      // Escape single quotes in azureAdDeviceId for OData filter (double them)
+      const escapedDeviceId = azureAdDeviceId.replace(/'/g, "''");
+      
       // Filter by azureADDeviceId and select required fields for display
-      const url = `https://graph.microsoft.com/beta/deviceManagement/managedDevices?$filter=azureADDeviceId eq '${azureAdDeviceId}'&$select=deviceName,operatingSystem,managedDeviceOwnerType,lastSyncDateTime,osVersion,complianceState,azureADDeviceId,id,userPrincipalName,deviceType&$top=50`;
+      const url = `https://graph.microsoft.com/beta/deviceManagement/managedDevices?$filter=azureADDeviceId eq '${escapedDeviceId}'&$select=deviceName,operatingSystem,managedDeviceOwnerType,lastSyncDateTime,osVersion,complianceState,azureADDeviceId,id,userPrincipalName,deviceType&$top=50`;
       
       logMessage(`getManagedDevicesByAzureAdDeviceId: Fetching device with Azure AD Device ID: ${azureAdDeviceId}`);
       
@@ -5368,7 +5371,7 @@ document.addEventListener("DOMContentLoaded", () => {
       
       // Provide more specific error messages for common issues
       if (error.message.includes('403') || error.message.includes('Forbidden')) {
-        errorMessage = `Access denied. You don't have permission to view members or devices. Contact your administrator.`;
+        errorMessage = `Access denied. You do not have permission to view members or devices. Contact your administrator.`;
       } else if (error.message.includes('404') || error.message.includes('Not Found')) {
         errorMessage = `Group "${groupName}" was not found or has been deleted.`;
       } else if (error.message.includes('401') || error.message.includes('Unauthorized')) {
