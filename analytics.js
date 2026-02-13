@@ -37,10 +37,18 @@ const Analytics = (() => {
     // Load settings from chrome.storage
     const data = await chrome.storage.local.get(['analyticsEnabled', 'analyticsClientId', 'analyticsSessionId']);
     
-    // Check if user has opted out
-    if (data.analyticsEnabled === false) {
+    // Check if user has opted in
+    if (data.analyticsEnabled === true) {
+      analyticsEnabled = true;
+      console.log('[Analytics] User has opted in to analytics');
+    } else if (data.analyticsEnabled === false) {
       analyticsEnabled = false;
       console.log('[Analytics] User has opted out of analytics');
+      return;
+    } else {
+      // Default: analytics disabled (opt-in model)
+      analyticsEnabled = false;
+      console.log('[Analytics] Analytics disabled by default (opt-in)');
       return;
     }
     
