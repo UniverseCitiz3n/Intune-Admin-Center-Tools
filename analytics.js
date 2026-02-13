@@ -44,6 +44,12 @@ const Analytics = (() => {
       return;
     }
     
+    // Check if user has opted in
+    if (data.analyticsEnabled === true) {
+      analyticsEnabled = true;
+      console.log('[Analytics] User has opted in to analytics');
+    }
+    
     // Generate or retrieve client ID (anonymous, persistent identifier)
     if (data.analyticsClientId) {
       clientId = data.analyticsClientId;
