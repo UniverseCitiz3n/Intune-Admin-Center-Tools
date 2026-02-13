@@ -44,10 +44,8 @@ const Analytics = (() => {
       return;
     }
     
-    // Set analytics enabled state if user has opted in
-    if (data.analyticsEnabled === true) {
-      analyticsEnabled = true;
-    }
+    // Set analytics enabled state based on storage (true if explicitly enabled, false otherwise)
+    analyticsEnabled = !!data.analyticsEnabled;
     
     // Generate or retrieve client ID (anonymous, persistent identifier)
     if (data.analyticsClientId) {
