@@ -4796,7 +4796,7 @@ document.addEventListener("DOMContentLoaded", () => {
       // Use Notes (static value) + activationlockbypasscode (contains UPN) filter
       // Match the exact URL format that works in the Intune portal
       const encodedUpn = encodeURIComponent(userPrincipalName);
-      const url = `https://graph.microsoft.com/beta/deviceManagement/managedDevices?$filter=(Notes%20eq%20%27bc3e5c73-e224-4e63-9b2b-0c36784b7e80%27)%20and%20((contains(activationlockbypasscode,%20%27${encodedUpn}%27)))&$select=deviceName,deviceType,azureADDeviceId,id,userPrincipalName&$top=50&$skipToken=Skip=%270%27`;
+      const url = `https://graph.microsoft.com/beta/deviceManagement/managedDevices?$filter=(Notes%20eq%20%27bc3e5c73-e224-4e63-9b2b-0c36784b7e80%27)%20and%20((contains(activationlockbypasscode,%20%27${encodedUpn}%27)))&$select=deviceName,deviceType,operatingSystem,managedDeviceOwnerType,lastSyncDateTime,osVersion,complianceState,azureADDeviceId,id,userPrincipalName&$top=50&$skipToken=Skip=%270%27`;
       
       logMessage(`fetchDevicesByPrimaryUser: Fetching devices for UPN: ${userPrincipalName}`);
       
