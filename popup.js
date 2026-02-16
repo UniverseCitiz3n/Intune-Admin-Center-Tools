@@ -703,24 +703,13 @@ document.addEventListener("DOMContentLoaded", () => {
     let rowIndex = (state.pagination.currentPage - 1) * state.pagination.itemsPerPage;
 
     devices.forEach(device => {
-      // Format last sync date
-      let lastSyncFormatted = '';
-      if (device.lastSync) {
-        try {
-          const date = new Date(device.lastSync);
-          lastSyncFormatted = date.toLocaleString();
-        } catch (e) {
-          lastSyncFormatted = device.lastSync;
-        }
-      }
-
       rows += `<tr data-row-index="${rowIndex}">
         <td style="word-wrap: break-word; white-space: normal;">${device.deviceName || ''}</td>
-        <td style="word-wrap: break-word; white-space: normal;">${device.platform || ''}</td>
         <td style="word-wrap: break-word; white-space: normal;">${device.ownership || ''}</td>
-        <td style="word-wrap: break-word; white-space: normal;">${lastSyncFormatted}</td>
-        <td style="word-wrap: break-word; white-space: normal;">${device.osVersion || ''}</td>
         <td style="word-wrap: break-word; white-space: normal;">${device.complianceState || ''}</td>
+        <td style="word-wrap: break-word; white-space: normal;">${device.platform || ''}</td>
+        <td style="word-wrap: break-word; white-space: normal;">${device.osVersion || ''}</td>
+        <td style="word-wrap: break-word; white-space: normal;">${device.userPrincipalName || ''}</td>
       </tr>`;
       rowIndex++;
     });
@@ -1249,11 +1238,11 @@ document.addEventListener("DOMContentLoaded", () => {
     } else if (type === 'intuneDevices') {
       headerContent = `
         <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="deviceName">Device Name</th>
-        <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="platform">Platform</th>
         <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="ownership">Ownership</th>
-        <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="lastSync">Last Sync</th>
-        <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="osVersion">OS Version</th>
         <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="complianceState">Compliance</th>
+        <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="platform">Platform</th>
+        <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="osVersion">OS Version</th>
+        <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="userPrincipalName">UPN</th>
       `;
     }
     headerRow.innerHTML = headerContent;
@@ -1570,7 +1559,11 @@ document.addEventListener("DOMContentLoaded", () => {
               // Restore UI elements
               if (context.groupName && context.summary) {
                 const summary = context.summary;
-                const displayText = `- ${context.groupName} (Members: ${summary.membersProcessed}, Users: ${summary.users}, Devices: ${summary.devices}, Other: ${summary.otherSkipped} | Intune devices found: ${summary.intuneDevicesFound}, Not found: ${summary.notFound})`;
+                let displayText = `- ${context.groupName} (Members: ${summary.membersProcessed}`;
+                if (summary.isCapped && summary.totalMembers) {
+                  displayText += ` of ${summary.totalMembers} - LIMITED TO 200`;
+                }
+                displayText += `, Users: ${summary.users}, Devices: ${summary.devices}, Other: ${summary.otherSkipped} | Intune devices found: ${summary.intuneDevicesFound}, Not found: ${summary.notFound})`;
                 document.getElementById('deviceNameDisplay').textContent = displayText;
               }
               
@@ -5335,9 +5328,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Step 1: Enumerate all group members (with pagination)
       logMessage('checkIntuneDevices: Step 1 - Enumerating group members');
-      const members = await resolveGroupMembers(groupId, false, token);
+      const allMembers = await resolveGroupMembers(groupId, false, token);
       
-      logMessage(`checkIntuneDevices: Retrieved ${members.length} members`);
+      logMessage(`checkIntuneDevices: Retrieved ${allMembers.length} members`);
+
+      // Cap at 200 members
+      const MEMBER_LIMIT = 200;
+      const isCapped = allMembers.length > MEMBER_LIMIT;
+      const members = isCapped ? allMembers.slice(0, MEMBER_LIMIT) : allMembers;
+      
+      if (isCapped) {
+        logMessage(`checkIntuneDevices: Group has ${allMembers.length} members, capping at ${MEMBER_LIMIT}`);
+      }
 
       // Step 2: Partition members by type
       const users = members.filter(m => m['@odata.type'] === '#microsoft.graph.user');
@@ -5408,6 +5410,8 @@ document.addEventListener("DOMContentLoaded", () => {
       // Step 4: Build summary and display
       const summary = {
         membersProcessed: members.length,
+        totalMembers: allMembers.length,
+        isCapped: isCapped,
         users: users.length,
         devices: devices.length,
         otherSkipped: otherMembers.length,
@@ -5430,7 +5434,11 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       // Update UI with summary
-      const displayText = `- ${groupName} (Members: ${summary.membersProcessed}, Users: ${summary.users}, Devices: ${summary.devices}, Other: ${summary.otherSkipped} | Intune devices found: ${summary.intuneDevicesFound}, Not found: ${summary.notFound})`;
+      let displayText = `- ${groupName} (Members: ${summary.membersProcessed}`;
+      if (summary.isCapped) {
+        displayText += ` of ${summary.totalMembers} - LIMITED TO 200`;
+      }
+      displayText += `, Users: ${summary.users}, Devices: ${summary.devices}, Other: ${summary.otherSkipped} | Intune devices found: ${summary.intuneDevicesFound}, Not found: ${summary.notFound})`;
       document.getElementById('deviceNameDisplay').textContent = displayText;
 
       // Hide dynamic query section
@@ -5477,11 +5485,11 @@ document.addEventListener("DOMContentLoaded", () => {
     // Map raw devices to flattened data first
     const flattenedData = devices.map(d => ({
       deviceName: d.deviceName || '',
-      platform: normalizePlatform(d.operatingSystem, d.deviceType) || d.operatingSystem || '',
       ownership: d.ownerType || '',
-      lastSync: d.lastSyncDateTime || '',
-      osVersion: d.osVersion || '',
       complianceState: d.complianceState || '',
+      platform: normalizePlatform(d.operatingSystem, d.deviceType) || d.operatingSystem || '',
+      osVersion: d.osVersion || '',
+      userPrincipalName: d.userPrincipalName || '',
       id: d.id || '',
       azureADDeviceId: d.azureADDeviceId || ''
     }));
@@ -5492,14 +5500,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const aVal = a[sortField] || '';
       const bVal = b[sortField] || '';
       
-      // For date fields, parse as dates
-      if (sortField === 'lastSync') {
-        const aDate = aVal ? new Date(aVal).getTime() : 0;
-        const bDate = bVal ? new Date(bVal).getTime() : 0;
-        return aDate - bDate;
-      }
-      
-      // For other fields, use string comparison
+      // For all fields, use string comparison
       return aVal.toString().localeCompare(bVal.toString());
     });
     
