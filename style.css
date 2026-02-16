@@ -405,6 +405,8 @@ table {
 }
 .output-area {
   flex: 3;
+  overflow-x: auto; /* Enable horizontal scrolling if needed */
+  max-width: 100%; /* Prevent expanding beyond available space */
 }
 
 /* V2.0 Sidebar Layout - Modern Grid-Based Controls
@@ -545,6 +547,20 @@ table {
 #configTable table {
   width: 100%;
   margin-top: 20px;
+  table-layout: fixed; /* Fixed layout prevents table from expanding */
+}
+
+#configTable {
+  overflow-x: auto; /* Enable horizontal scrolling if content is too wide */
+  max-width: 100%; /* Prevent container from expanding beyond parent */
+}
+
+/* Table cells should wrap text properly */
+#configTable td,
+#configTable th {
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-word;
 }
 
 /* Notification styling */
