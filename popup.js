@@ -1530,16 +1530,18 @@ document.addEventListener("DOMContentLoaded", () => {
             if (data.lastCheckedGroup) {
               state.lastCheckedGroup = data.lastCheckedGroup;
               
-              // Restore dynamic group tracking
-              if (state.lastCheckedGroup.isDynamic) {
+              // Restore dynamic group tracking (if properties exist)
+              if (state.lastCheckedGroup.isDynamic && state.lastCheckedGroup.groupId) {
                 addDynamicGroup(state.lastCheckedGroup.groupId);
               }
               
               // Restore UI elements
-              const groupType = state.lastCheckedGroup.isDynamic ? 'Dynamic' : 'Assigned';
-              const memberCount = data.lastGroupMembers ? data.lastGroupMembers.length : 0;
-              document.getElementById('deviceNameDisplay').textContent = 
-                `- ${state.lastCheckedGroup.groupName} (${memberCount} members, ${groupType})`;
+              if (state.lastCheckedGroup.groupName && state.lastCheckedGroup.isDynamic !== undefined) {
+                const groupType = state.lastCheckedGroup.isDynamic ? 'Dynamic' : 'Assigned';
+                const memberCount = data.lastGroupMembers && Array.isArray(data.lastGroupMembers) ? data.lastGroupMembers.length : 0;
+                document.getElementById('deviceNameDisplay').textContent = 
+                  `- ${state.lastCheckedGroup.groupName} (${memberCount} members, ${groupType})`;
+              }
               
               // Show/hide dynamic query section
               const dynamicQuerySection = document.getElementById('dynamicQuerySection');
@@ -3222,12 +3224,14 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         updateGroupMembersTable(members);
 
-        // Defensive: double-check lastCheckedGroup exists (should always be true here)
-        if (state.lastCheckedGroup) {
+        // Update display text with group type if available
+        let displayText = `- ${bulkAddState.selectedGroupName} (${totalCount} members`;
+        if (state.lastCheckedGroup && state.lastCheckedGroup.isDynamic !== undefined) {
           const groupType = state.lastCheckedGroup.isDynamic ? 'Dynamic' : 'Assigned';
-          const displayText = `- ${bulkAddState.selectedGroupName} (${totalCount} members, ${groupType})`;
-          document.getElementById('deviceNameDisplay').textContent = displayText;
+          displayText += `, ${groupType}`;
         }
+        displayText += ')';
+        document.getElementById('deviceNameDisplay').textContent = displayText;
       }
 
     } catch (error) {
