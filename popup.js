@@ -5702,6 +5702,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  // Report Bug option
+  document.getElementById("reportBugOption").addEventListener("click", (e) => {
+    e.preventDefault();
+    settingsDropdown.classList.remove("show");
+    
+    // Open GitHub bug report template in a new tab
+    const bugReportUrl = 'https://github.com/UniverseCitiz3n/Intune-Admin-Center-Tools/issues/new/choose';
+    chrome.tabs.create({ url: bugReportUrl });
+    
+    logMessage('Bug report page opened via settings menu');
+  });
+
   // Function to clear all extension storage
   const clearExtensionStorage = () => {
     // Preserve current theme and analytics preference before clearing storage
