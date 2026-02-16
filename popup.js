@@ -1538,7 +1538,7 @@ document.addEventListener("DOMContentLoaded", () => {
               // Restore UI elements
               if (state.lastCheckedGroup.groupName && state.lastCheckedGroup.isDynamic !== undefined) {
                 const groupType = state.lastCheckedGroup.isDynamic ? 'Dynamic' : 'Assigned';
-                const memberCount = data.lastGroupMembers && Array.isArray(data.lastGroupMembers) ? data.lastGroupMembers.length : 0;
+                const memberCount = data.lastGroupMembers ? data.lastGroupMembers.length : 0;
                 document.getElementById('deviceNameDisplay').textContent = 
                   `- ${state.lastCheckedGroup.groupName} (${memberCount} members, ${groupType})`;
               }
