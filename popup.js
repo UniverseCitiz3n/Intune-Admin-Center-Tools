@@ -1495,7 +1495,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // ── State Restoration Functions ─────────────────────────────────────────
   const restoreFilterValue = () => {
     chrome.storage.local.get(
-      ['profileFilterValue', 'currentDisplayType', 'targetMode', 'lastComplianceAssignments', 'lastAppAssignments', 'lastConfigAssignments', 'lastPwshAssignments', 'lastGroupMembers', 'lastGroupAssignments'],
+      ['profileFilterValue', 'currentDisplayType', 'targetMode', 'lastComplianceAssignments', 'lastAppAssignments', 'lastConfigAssignments', 'lastPwshAssignments', 'lastGroupMembers', 'lastGroupAssignments', 'lastCheckedGroup'],
       (data) => {
         // Restore target mode
         if (data.targetMode) {
@@ -1521,13 +1521,41 @@ document.addEventListener("DOMContentLoaded", () => {
             chrome.storage.local.remove(['lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments']);
             updateConfigTable(data.lastConfigAssignments, false);
           } else if (state.currentDisplayType === 'pwsh' && data.lastPwshAssignments) {
-            chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastComplianceAssignments', 'lastGroupMembers']);
+            chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastComplianceAssignments', 'lastGroupMembers', 'lastCheckedGroup']);
             updatePwshTable(data.lastPwshAssignments, false);
           } else if (state.currentDisplayType === 'groupMembers' && data.lastGroupMembers) {
             chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments']);
+            
+            // Restore lastCheckedGroup state if available
+            if (data.lastCheckedGroup) {
+              state.lastCheckedGroup = data.lastCheckedGroup;
+              
+              // Restore dynamic group tracking
+              if (state.lastCheckedGroup.isDynamic) {
+                addDynamicGroup(state.lastCheckedGroup.groupId);
+              }
+              
+              // Restore UI elements
+              const groupType = state.lastCheckedGroup.isDynamic ? 'Dynamic' : 'Assigned';
+              const memberCount = data.lastGroupMembers ? data.lastGroupMembers.length : 0;
+              document.getElementById('deviceNameDisplay').textContent = 
+                `- ${state.lastCheckedGroup.groupName} (${memberCount} members, ${groupType})`;
+              
+              // Show/hide dynamic query section
+              const dynamicQuerySection = document.getElementById('dynamicQuerySection');
+              if (dynamicQuerySection) {
+                if (state.lastCheckedGroup.isDynamic && state.lastCheckedGroup.membershipRule) {
+                  dynamicQuerySection.style.display = 'block';
+                  document.getElementById('dynamicQueryContent').textContent = state.lastCheckedGroup.membershipRule;
+                } else {
+                  dynamicQuerySection.style.display = 'none';
+                }
+              }
+            }
+            
             updateGroupMembersTable(data.lastGroupMembers, false);
           } else if (state.currentDisplayType === 'groupAssignments' && data.lastGroupAssignments) {
-            chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments', 'lastGroupMembers']);
+            chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments', 'lastGroupMembers', 'lastCheckedGroup']);
             updateGroupAssignmentsTable(data.lastGroupAssignments, false);
           }
         } else {
@@ -2149,7 +2177,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Clear other data types from storage
       chrome.storage.local.remove(['lastConfigAssignments','lastAppAssignments','lastComplianceAssignments','lastPwshAssignments']);
-      chrome.storage.local.set({ lastGroupMembers: members });
+      chrome.storage.local.set({ 
+        lastGroupMembers: members,
+        lastCheckedGroup: state.lastCheckedGroup 
+      });
 
       // Update UI - show exact count and group type
       const groupType = groupInfo.isDynamic ? 'Dynamic' : 'Assigned';
@@ -2608,11 +2639,19 @@ document.addEventListener("DOMContentLoaded", () => {
           clearMembersState.selectedGroupId,
           token
         );
-        chrome.storage.local.set({ lastGroupMembers: members });
+        chrome.storage.local.set({ 
+          lastGroupMembers: members,
+          lastCheckedGroup: state.lastCheckedGroup 
+        });
         updateGroupMembersTable(members);
         
-        // Update display text
-        const displayText = `- ${clearMembersState.selectedGroupName} (${totalCount} members)`;
+        // Update display text with group type if available
+        let displayText = `- ${clearMembersState.selectedGroupName} (${totalCount} members`;
+        if (state.lastCheckedGroup && state.lastCheckedGroup.groupId === clearMembersState.selectedGroupId) {
+          const groupType = state.lastCheckedGroup.isDynamic ? 'Dynamic' : 'Assigned';
+          displayText += `, ${groupType}`;
+        }
+        displayText += ')';
         document.getElementById('deviceNameDisplay').textContent = displayText;
       }
       
@@ -3177,10 +3216,14 @@ document.addEventListener("DOMContentLoaded", () => {
           bulkAddState.selectedGroupId,
           token
         );
-        chrome.storage.local.set({ lastGroupMembers: members });
+        chrome.storage.local.set({ 
+          lastGroupMembers: members,
+          lastCheckedGroup: state.lastCheckedGroup 
+        });
         updateGroupMembersTable(members);
 
-        const displayText = `- ${bulkAddState.selectedGroupName} (${totalCount} members)`;
+        const groupType = state.lastCheckedGroup.isDynamic ? 'Dynamic' : 'Assigned';
+        const displayText = `- ${bulkAddState.selectedGroupName} (${totalCount} members, ${groupType})`;
         document.getElementById('deviceNameDisplay').textContent = displayText;
       }
 
@@ -3626,7 +3669,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       // Clear other data types from storage
-      chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments', 'lastGroupMembers']);
+      chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments', 'lastGroupMembers', 'lastCheckedGroup']);
       chrome.storage.local.set({ lastGroupAssignments: allAssignments });
 
       // Update UI
@@ -3683,7 +3726,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById('profileFilterInput').value = '';
     chrome.storage.local.set({ profileFilterValue: '' });
 
-    chrome.storage.local.remove(['lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments', 'lastGroupMembers']);
+    chrome.storage.local.remove(['lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments', 'lastGroupMembers', 'lastCheckedGroup']);
 
     // Clear table selection before loading new assignments
     clearTableSelection();
@@ -3847,7 +3890,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById('profileFilterInput').value = '';
     chrome.storage.local.set({ profileFilterValue: '' });
 
-    chrome.storage.local.remove(['lastConfigAssignments','lastAppAssignments','lastPwshAssignments','lastGroupMembers']);
+    chrome.storage.local.remove(['lastConfigAssignments','lastAppAssignments','lastPwshAssignments','lastGroupMembers','lastCheckedGroup']);
 
     // Clear table selection before loading new assignments
     clearTableSelection();
@@ -4247,7 +4290,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById('profileFilterInput').value = '';
     chrome.storage.local.set({ profileFilterValue: '' });
 
-    chrome.storage.local.remove(['lastConfigAssignments','lastComplianceAssignments','lastPwshAssignments','lastGroupMembers']);
+    chrome.storage.local.remove(['lastConfigAssignments','lastComplianceAssignments','lastPwshAssignments','lastGroupMembers','lastCheckedGroup']);
 
     // Clear table selection before loading new assignments
     clearTableSelection();
@@ -4433,7 +4476,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById('profileFilterInput').value = '';
     chrome.storage.local.set({ profileFilterValue: '' });
 
-    chrome.storage.local.remove(['lastConfigAssignments','lastAppAssignments','lastComplianceAssignments','lastGroupMembers']);
+    chrome.storage.local.remove(['lastConfigAssignments','lastAppAssignments','lastComplianceAssignments','lastGroupMembers','lastCheckedGroup']);
 
     // Clear table selection before loading new assignments
     clearTableSelection();
@@ -5333,7 +5376,7 @@ document.addEventListener("DOMContentLoaded", () => {
       logMessage(`checkIntuneDevices: Found ${allIntuneDevices.length} unique Intune devices`);
 
       // Clear other data types from storage
-      chrome.storage.local.remove(['lastConfigAssignments','lastAppAssignments','lastComplianceAssignments','lastPwshAssignments','lastGroupMembers']);
+      chrome.storage.local.remove(['lastConfigAssignments','lastAppAssignments','lastComplianceAssignments','lastPwshAssignments','lastGroupMembers','lastCheckedGroup']);
       chrome.storage.local.set({ lastIntuneDevices: allIntuneDevices });
 
       // Step 4: Build summary and display
