@@ -3,6 +3,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const state = {
     currentDisplayType: 'config',
     sortDirection: 'asc',
+    sortField: 'deviceName', // Track which field to sort by
     theme: 'light',
     targetMode: 'device', // New: track whether we're targeting devices or users
     selectedTableRows: new Set(), // Track selected table rows
@@ -1247,12 +1248,12 @@ document.addEventListener("DOMContentLoaded", () => {
       `;
     } else if (type === 'intuneDevices') {
       headerContent = `
-        <th class="sortable" style="word-wrap: break-word; white-space: normal;">Device Name</th>
-        <th style="word-wrap: break-word; white-space: normal;">Platform</th>
-        <th style="word-wrap: break-word; white-space: normal;">Ownership</th>
-        <th style="word-wrap: break-word; white-space: normal;">Last Sync</th>
-        <th style="word-wrap: break-word; white-space: normal;">OS Version</th>
-        <th style="word-wrap: break-word; white-space: normal;">Compliance</th>
+        <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="deviceName">Device Name</th>
+        <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="platform">Platform</th>
+        <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="ownership">Ownership</th>
+        <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="lastSync">Last Sync</th>
+        <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="osVersion">OS Version</th>
+        <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="complianceState">Compliance</th>
       `;
     }
     headerRow.innerHTML = headerContent;
@@ -4796,7 +4797,7 @@ document.addEventListener("DOMContentLoaded", () => {
       // Use Notes (static value) + activationlockbypasscode (contains UPN) filter
       // Match the exact URL format that works in the Intune portal
       const encodedUpn = encodeURIComponent(userPrincipalName);
-      const url = `https://graph.microsoft.com/beta/deviceManagement/managedDevices?$filter=(Notes%20eq%20%27bc3e5c73-e224-4e63-9b2b-0c36784b7e80%27)%20and%20((contains(activationlockbypasscode,%20%27${encodedUpn}%27)))&$select=deviceName,deviceType,operatingSystem,managedDeviceOwnerType,lastSyncDateTime,osVersion,complianceState,azureADDeviceId,id,userPrincipalName&$top=50&$skipToken=Skip=%270%27`;
+      const url = `https://graph.microsoft.com/beta/deviceManagement/managedDevices?$filter=(Notes%20eq%20%27bc3e5c73-e224-4e63-9b2b-0c36784b7e80%27)%20and%20((contains(activationlockbypasscode,%20%27${encodedUpn}%27)))&$select=deviceName,deviceType,operatingSystem,ownerType,lastSyncDateTime,osVersion,complianceState,azureADDeviceId,id,userPrincipalName&$top=50&$skipToken=Skip=%270%27`;
       
       logMessage(`fetchDevicesByPrimaryUser: Fetching devices for UPN: ${userPrincipalName}`);
       
@@ -5280,7 +5281,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const escapedDeviceId = azureAdDeviceId.replace(/'/g, "''");
       
       // Filter by azureADDeviceId and select required fields for display
-      const url = `https://graph.microsoft.com/beta/deviceManagement/managedDevices?$filter=azureADDeviceId eq '${escapedDeviceId}'&$select=deviceName,operatingSystem,managedDeviceOwnerType,lastSyncDateTime,osVersion,complianceState,azureADDeviceId,id,userPrincipalName,deviceType&$top=50`;
+      const url = `https://graph.microsoft.com/beta/deviceManagement/managedDevices?$filter=azureADDeviceId eq '${escapedDeviceId}'&$select=deviceName,operatingSystem,ownerType,lastSyncDateTime,osVersion,complianceState,azureADDeviceId,id,userPrincipalName,deviceType&$top=50`;
       
       logMessage(`getManagedDevicesByAzureAdDeviceId: Fetching device with Azure AD Device ID: ${azureAdDeviceId}`);
       
@@ -5473,14 +5474,11 @@ document.addEventListener("DOMContentLoaded", () => {
     state.pagination.itemsPerPage = 10;
     updateTableHeaders('intuneDevices');
     
-    // Sort by device name
-    devices.sort((a, b) => (a.deviceName || '').localeCompare(b.deviceName || ''));
-    if (state.sortDirection === 'desc') devices.reverse();
-
+    // Map raw devices to flattened data first
     const flattenedData = devices.map(d => ({
       deviceName: d.deviceName || '',
       platform: normalizePlatform(d.operatingSystem, d.deviceType) || d.operatingSystem || '',
-      ownership: d.managedDeviceOwnerType || '',
+      ownership: d.ownerType || '',
       lastSync: d.lastSyncDateTime || '',
       osVersion: d.osVersion || '',
       complianceState: d.complianceState || '',
@@ -5488,16 +5486,38 @@ document.addEventListener("DOMContentLoaded", () => {
       azureADDeviceId: d.azureADDeviceId || ''
     }));
 
+    // Sort by current sort field
+    const sortField = state.sortField || 'deviceName';
+    flattenedData.sort((a, b) => {
+      const aVal = a[sortField] || '';
+      const bVal = b[sortField] || '';
+      
+      // For date fields, parse as dates
+      if (sortField === 'lastSync') {
+        const aDate = aVal ? new Date(aVal).getTime() : 0;
+        const bDate = bVal ? new Date(bVal).getTime() : 0;
+        return aDate - bDate;
+      }
+      
+      // For other fields, use string comparison
+      return aVal.toString().localeCompare(bVal.toString());
+    });
+    
+    if (state.sortDirection === 'desc') flattenedData.reverse();
+
     updatePaginationState(flattenedData);
 
     renderCurrentPage();
     updatePaginationControls();
 
-    const sortableHeader = document.querySelector('th.sortable');
-    if (sortableHeader) {
-      sortableHeader.classList.remove('desc', 'asc');
-      sortableHeader.classList.add(state.sortDirection);
-    }
+    // Update all sortable headers to show current sort
+    const sortableHeaders = document.querySelectorAll('th.sortable');
+    sortableHeaders.forEach(header => {
+      header.classList.remove('desc', 'asc');
+      if (header.dataset.sortField === sortField) {
+        header.classList.add(state.sortDirection);
+      }
+    });
   };
 
   // ══════════════════════════════════════════════════════════════
@@ -5982,9 +6002,20 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener('click', function (e) {
     // Check if the clicked element is a sortable header
     if (e.target && e.target.classList.contains('sortable')) {
-      state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
-      e.target.classList.toggle('asc');
-      e.target.classList.toggle('desc');
+      // Get the sort field from data attribute
+      const newSortField = e.target.dataset.sortField;
+      
+      // If clicking the same field, toggle direction; otherwise reset to asc
+      if (newSortField && state.sortField === newSortField) {
+        state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
+      } else if (newSortField) {
+        state.sortField = newSortField;
+        state.sortDirection = 'asc';
+      } else {
+        // Fallback for headers without data-sort-field (backwards compatibility)
+        state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
+      }
+      
       // Re-render the current table based on display type
       if (state.currentDisplayType === 'config') {
         chrome.storage.local.get(['lastConfigAssignments'], (data) => {
