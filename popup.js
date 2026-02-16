@@ -3222,9 +3222,12 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         updateGroupMembersTable(members);
 
-        const groupType = state.lastCheckedGroup.isDynamic ? 'Dynamic' : 'Assigned';
-        const displayText = `- ${bulkAddState.selectedGroupName} (${totalCount} members, ${groupType})`;
-        document.getElementById('deviceNameDisplay').textContent = displayText;
+        // Defensive: double-check lastCheckedGroup exists (should always be true here)
+        if (state.lastCheckedGroup) {
+          const groupType = state.lastCheckedGroup.isDynamic ? 'Dynamic' : 'Assigned';
+          const displayText = `- ${bulkAddState.selectedGroupName} (${totalCount} members, ${groupType})`;
+          document.getElementById('deviceNameDisplay').textContent = displayText;
+        }
       }
 
     } catch (error) {
