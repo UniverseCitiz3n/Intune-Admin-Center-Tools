@@ -703,6 +703,17 @@ document.addEventListener("DOMContentLoaded", () => {
     let rowIndex = (state.pagination.currentPage - 1) * state.pagination.itemsPerPage;
 
     devices.forEach(device => {
+      // Format last sync date
+      let lastSyncFormatted = '';
+      if (device.lastSync) {
+        try {
+          const date = new Date(device.lastSync);
+          lastSyncFormatted = date.toLocaleString();
+        } catch (e) {
+          lastSyncFormatted = device.lastSync;
+        }
+      }
+
       rows += `<tr data-row-index="${rowIndex}">
         <td style="word-wrap: break-word; white-space: normal;">${device.deviceName || ''}</td>
         <td style="word-wrap: break-word; white-space: normal;">${device.ownership || ''}</td>
@@ -710,6 +721,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <td style="word-wrap: break-word; white-space: normal;">${device.platform || ''}</td>
         <td style="word-wrap: break-word; white-space: normal;">${device.osVersion || ''}</td>
         <td style="word-wrap: break-word; white-space: normal;">${device.userPrincipalName || ''}</td>
+        <td style="word-wrap: break-word; white-space: normal;">${lastSyncFormatted}</td>
       </tr>`;
       rowIndex++;
     });
@@ -1243,6 +1255,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="platform">Platform</th>
         <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="osVersion">OS Version</th>
         <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="userPrincipalName">UPN</th>
+        <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="lastSync">Last Sync</th>
       `;
     }
     headerRow.innerHTML = headerContent;
@@ -5490,6 +5503,7 @@ document.addEventListener("DOMContentLoaded", () => {
       platform: normalizePlatform(d.operatingSystem, d.deviceType) || d.operatingSystem || '',
       osVersion: d.osVersion || '',
       userPrincipalName: d.userPrincipalName || '',
+      lastSync: d.lastSyncDateTime || '',
       id: d.id || '',
       azureADDeviceId: d.azureADDeviceId || ''
     }));
@@ -5500,7 +5514,14 @@ document.addEventListener("DOMContentLoaded", () => {
       const aVal = a[sortField] || '';
       const bVal = b[sortField] || '';
       
-      // For all fields, use string comparison
+      // For date fields, parse as dates
+      if (sortField === 'lastSync') {
+        const aDate = aVal ? new Date(aVal).getTime() : 0;
+        const bDate = bVal ? new Date(bVal).getTime() : 0;
+        return aDate - bDate;
+      }
+      
+      // For other fields, use string comparison
       return aVal.toString().localeCompare(bVal.toString());
     });
     
