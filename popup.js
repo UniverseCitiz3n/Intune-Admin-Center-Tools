@@ -5708,7 +5708,7 @@ document.addEventListener("DOMContentLoaded", () => {
     settingsDropdown.classList.remove("show");
     
     // Open GitHub bug report template in a new tab
-    const bugReportUrl = 'https://github.com/UniverseCitiz3n/Intune-Admin-Center-Tools/issues/new?template=bug_report.md';
+    const bugReportUrl = 'https://github.com/UniverseCitiz3n/Intune-Admin-Center-Tools/issues/new/choose';
     chrome.tabs.create({ url: bugReportUrl });
     
     logMessage('Bug report page opened via settings menu');
