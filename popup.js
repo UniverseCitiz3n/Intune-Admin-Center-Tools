@@ -1495,7 +1495,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // ── State Restoration Functions ─────────────────────────────────────────
   const restoreFilterValue = () => {
     chrome.storage.local.get(
-      ['profileFilterValue', 'currentDisplayType', 'targetMode', 'lastComplianceAssignments', 'lastAppAssignments', 'lastConfigAssignments', 'lastPwshAssignments', 'lastGroupMembers', 'lastGroupAssignments', 'lastCheckedGroup'],
+      ['profileFilterValue', 'currentDisplayType', 'targetMode', 'lastComplianceAssignments', 'lastAppAssignments', 'lastConfigAssignments', 'lastPwshAssignments', 'lastGroupMembers', 'lastGroupAssignments', 'lastCheckedGroup', 'lastIntuneDevices', 'lastIntuneDevicesContext'],
       (data) => {
         // Restore target mode
         if (data.targetMode) {
@@ -1559,6 +1559,28 @@ document.addEventListener("DOMContentLoaded", () => {
           } else if (state.currentDisplayType === 'groupAssignments' && data.lastGroupAssignments) {
             chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments', 'lastGroupMembers', 'lastCheckedGroup']);
             updateGroupAssignmentsTable(data.lastGroupAssignments, false);
+          } else if (state.currentDisplayType === 'intuneDevices' && data.lastIntuneDevices) {
+            chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments', 'lastGroupMembers', 'lastCheckedGroup']);
+            
+            // Restore lastIntuneDevicesContext if available
+            if (data.lastIntuneDevicesContext) {
+              const context = data.lastIntuneDevicesContext;
+              
+              // Restore UI elements
+              if (context.groupName && context.summary) {
+                const summary = context.summary;
+                const displayText = `- ${context.groupName} (Members: ${summary.membersProcessed}, Users: ${summary.users}, Devices: ${summary.devices}, Other: ${summary.otherSkipped} | Intune devices found: ${summary.intuneDevicesFound}, Not found: ${summary.notFound})`;
+                document.getElementById('deviceNameDisplay').textContent = displayText;
+              }
+              
+              // Hide dynamic query section
+              const dynamicQuerySection = document.getElementById('dynamicQuerySection');
+              if (dynamicQuerySection) {
+                dynamicQuerySection.style.display = 'none';
+              }
+            }
+            
+            updateIntuneDevicesTable(data.lastIntuneDevices, false);
           }
         } else {
           clearTableAndPagination();
@@ -5382,10 +5404,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
       logMessage(`checkIntuneDevices: Found ${allIntuneDevices.length} unique Intune devices`);
 
-      // Clear other data types from storage
-      chrome.storage.local.remove(['lastConfigAssignments','lastAppAssignments','lastComplianceAssignments','lastPwshAssignments','lastGroupMembers','lastCheckedGroup']);
-      chrome.storage.local.set({ lastIntuneDevices: allIntuneDevices });
-
       // Step 4: Build summary and display
       const summary = {
         membersProcessed: members.length,
@@ -5395,6 +5413,20 @@ document.addEventListener("DOMContentLoaded", () => {
         intuneDevicesFound: allIntuneDevices.length,
         notFound: notFoundCount
       };
+
+      // Cache the context for restoration on popup reload
+      const intuneDevicesContext = {
+        groupId: groupId,
+        groupName: groupName,
+        summary: summary
+      };
+
+      // Clear other data types from storage
+      chrome.storage.local.remove(['lastConfigAssignments','lastAppAssignments','lastComplianceAssignments','lastPwshAssignments','lastGroupMembers','lastCheckedGroup']);
+      chrome.storage.local.set({ 
+        lastIntuneDevices: allIntuneDevices,
+        lastIntuneDevicesContext: intuneDevicesContext
+      });
 
       // Update UI with summary
       const displayText = `- ${groupName} (Members: ${summary.membersProcessed}, Users: ${summary.users}, Devices: ${summary.devices}, Other: ${summary.otherSkipped} | Intune devices found: ${summary.intuneDevicesFound}, Not found: ${summary.notFound})`;
