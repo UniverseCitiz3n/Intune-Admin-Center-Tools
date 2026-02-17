@@ -5774,21 +5774,7 @@ document.addEventListener("DOMContentLoaded", () => {
       updateDeviceNameDisplay(deviceData);
 
       const userPrincipalName = deviceData.userPrincipalName;
-      if (!userPrincipalName || userPrincipalName === 'Unknown user') {
-        throw new Error("No primary user found for this device.");
-      }
-
-      // Get the user ID
-      const userData = await fetchJSON(`https://graph.microsoft.com/beta/users?$filter=userPrincipalName eq '${encodeURIComponent(userPrincipalName)}'`, {
-        method: "GET",
-        headers: { "Authorization": token, "Content-Type": "application/json" }
-      });
-
-      if (!userData.value || userData.value.length === 0) {
-        throw new Error("User not found in Azure AD.");
-      }
-
-      const userObjectId = userData.value[0].id;
+      const hasValidPrimaryUser = userPrincipalName && userPrincipalName !== 'Unknown user';
 
       // Format the log paths for the API - with proper escaping
       const logPathsFormatted = [];
@@ -5805,6 +5791,27 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error("No valid log paths provided.");
       }
 
+      let userObjectId;
+
+      if (hasValidPrimaryUser) {
+        // Get the user ID for devices with a primary user
+        const userData = await fetchJSON(`https://graph.microsoft.com/beta/users?$filter=userPrincipalName eq '${encodeURIComponent(userPrincipalName)}'`, {
+          method: "GET",
+          headers: { "Authorization": token, "Content-Type": "application/json" }
+        });
+
+        if (!userData.value || userData.value.length === 0) {
+          throw new Error("User not found in Azure AD.");
+        }
+
+        userObjectId = userData.value[0].id;
+        logMessage(`collectLogs: Requesting logs for user ${userObjectId}, device ${mdmDeviceId}, app ${appId}`);
+      } else {
+        // For shared devices without primary user, use placeholder user ID (matches Intune GUI behavior)
+        userObjectId = '00000000-0000-0000-0000-000000000000';
+        logMessage(`collectLogs: Requesting logs for shared device ${mdmDeviceId}, app ${appId} (using placeholder user ID)`);
+      }
+
       // Create raw JSON string with exactly the format needed
       const rawJsonBody = `{
         "customLogFolders": [${logPathsFormatted.join(', ')}],
@@ -5812,11 +5819,11 @@ document.addEventListener("DOMContentLoaded", () => {
       }`;
 
       logMessage(`collectLogs: Log paths: ${JSON.stringify(logPathsFormatted)}`);
-      logMessage(`collectLogs: Requesting logs for user ${userObjectId}, device ${mdmDeviceId}, app ${appId}`);
 
-      // Make the API call
+      // Use user-based endpoint for both cases (matches Intune GUI behavior)
       const requestUrl = `https://graph.microsoft.com/beta/users('${userObjectId}')/mobileAppTroubleshootingEvents('${mdmDeviceId}_${appId}')/appLogCollectionRequests`;
 
+      // Make the API call
       const logResult = await fetchJSON(requestUrl, {
         method: "POST",
         headers: {
