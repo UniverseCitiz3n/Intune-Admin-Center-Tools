@@ -3,6 +3,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const state = {
     currentDisplayType: 'config',
     sortDirection: 'asc',
+    sortField: 'deviceName', // Track which field to sort by
     theme: 'light',
     targetMode: 'device', // New: track whether we're targeting devices or users
     selectedTableRows: new Set(), // Track selected table rows
@@ -353,6 +354,17 @@ document.addEventListener("DOMContentLoaded", () => {
         item.configType || '',
         item.intent || ''
       ]);
+    } else if (state.currentDisplayType === 'intuneDevices') {
+      headers = ['Device Name', 'Ownership', 'Compliance', 'Platform', 'OS Version', 'UPN', 'Last Sync'];
+      rows = data.map(item => [
+        item.deviceName || '',
+        item.ownership || '',
+        item.complianceState || '',
+        item.platform || '',
+        item.osVersion || '',
+        item.userPrincipalName || '',
+        item.lastSync || ''
+      ]);
     }
 
     // Escape CSV values (handle commas, quotes, newlines)
@@ -383,7 +395,8 @@ document.addEventListener("DOMContentLoaded", () => {
       'compliance': 'compliance_assignments',
       'pwsh': 'powershell_scripts',
       'groupMembers': 'group_members',
-      'groupAssignments': 'group_assignments'
+      'groupAssignments': 'group_assignments',
+      'intuneDevices': 'intune_devices'
     };
     const filename = `intune_${typeNames[state.currentDisplayType] || 'export'}_${timestamp}.csv`;
     link.setAttribute('download', filename);
@@ -457,6 +470,8 @@ document.addEventListener("DOMContentLoaded", () => {
       renderGroupMembersTablePage(currentPageData);
     } else if (state.currentDisplayType === 'groupAssignments') {
       renderGroupAssignmentsTablePage(currentPageData);
+    } else if (state.currentDisplayType === 'intuneDevices') {
+      renderIntuneDevicesTablePage(currentPageData);
     }
   };
 
@@ -688,6 +703,37 @@ document.addEventListener("DOMContentLoaded", () => {
         <td style="word-wrap: break-word; white-space: normal;">${assignment.configName || ''}</td>
         <td style="word-wrap: break-word; white-space: normal;">${assignment.configType || ''}</td>
         <td style="word-wrap: break-word; white-space: normal;">${assignment.intent || ''}</td>
+      </tr>`;
+      rowIndex++;
+    });
+
+    document.getElementById("configTableBody").innerHTML = rows;
+  };
+
+  const renderIntuneDevicesTablePage = (devices) => {
+    let rows = '';
+    let rowIndex = (state.pagination.currentPage - 1) * state.pagination.itemsPerPage;
+
+    devices.forEach(device => {
+      // Format last sync date
+      let lastSyncFormatted = '';
+      if (device.lastSync) {
+        try {
+          const date = new Date(device.lastSync);
+          lastSyncFormatted = date.toLocaleString();
+        } catch (e) {
+          lastSyncFormatted = device.lastSync;
+        }
+      }
+
+      rows += `<tr data-row-index="${rowIndex}">
+        <td style="word-wrap: break-word; white-space: normal;">${device.deviceName || ''}</td>
+        <td style="word-wrap: break-word; white-space: normal;">${device.ownership || ''}</td>
+        <td style="word-wrap: break-word; white-space: normal;">${device.complianceState || ''}</td>
+        <td style="word-wrap: break-word; white-space: normal;">${device.platform || ''}</td>
+        <td style="word-wrap: break-word; white-space: normal;">${device.osVersion || ''}</td>
+        <td style="word-wrap: break-word; white-space: normal;">${device.userPrincipalName || ''}</td>
+        <td style="word-wrap: break-word; white-space: normal;">${lastSyncFormatted}</td>
       </tr>`;
       rowIndex++;
     });
@@ -1213,6 +1259,16 @@ document.addEventListener("DOMContentLoaded", () => {
         <th style="word-wrap: break-word; white-space: normal;">Configuration Type</th>
         <th style="word-wrap: break-word; white-space: normal;">Intent</th>
       `;
+    } else if (type === 'intuneDevices') {
+      headerContent = `
+        <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="deviceName">Device Name</th>
+        <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="ownership">Ownership</th>
+        <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="complianceState">Compliance</th>
+        <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="platform">Platform</th>
+        <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="osVersion">OS Version</th>
+        <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="userPrincipalName">UPN</th>
+        <th class="sortable" style="word-wrap: break-word; white-space: normal;" data-sort-field="lastSync">Last Sync</th>
+      `;
     }
     headerRow.innerHTML = headerContent;
     const sortableHeader = document.querySelector('th.sortable');
@@ -1454,7 +1510,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // ── State Restoration Functions ─────────────────────────────────────────
   const restoreFilterValue = () => {
     chrome.storage.local.get(
-      ['profileFilterValue', 'currentDisplayType', 'targetMode', 'lastComplianceAssignments', 'lastAppAssignments', 'lastConfigAssignments', 'lastPwshAssignments', 'lastGroupMembers', 'lastGroupAssignments'],
+      ['profileFilterValue', 'currentDisplayType', 'targetMode', 'lastComplianceAssignments', 'lastAppAssignments', 'lastConfigAssignments', 'lastPwshAssignments', 'lastGroupMembers', 'lastGroupAssignments', 'lastCheckedGroup', 'lastIntuneDevices', 'lastIntuneDevicesContext'],
       (data) => {
         // Restore target mode
         if (data.targetMode) {
@@ -1480,14 +1536,70 @@ document.addEventListener("DOMContentLoaded", () => {
             chrome.storage.local.remove(['lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments']);
             updateConfigTable(data.lastConfigAssignments, false);
           } else if (state.currentDisplayType === 'pwsh' && data.lastPwshAssignments) {
-            chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastComplianceAssignments', 'lastGroupMembers']);
+            chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastComplianceAssignments', 'lastGroupMembers', 'lastCheckedGroup']);
             updatePwshTable(data.lastPwshAssignments, false);
           } else if (state.currentDisplayType === 'groupMembers' && data.lastGroupMembers) {
             chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments']);
+            
+            // Restore lastCheckedGroup state if available
+            if (data.lastCheckedGroup) {
+              state.lastCheckedGroup = data.lastCheckedGroup;
+              
+              // Restore dynamic group tracking (if properties exist)
+              if (state.lastCheckedGroup.isDynamic && state.lastCheckedGroup.groupId) {
+                addDynamicGroup(state.lastCheckedGroup.groupId);
+              }
+              
+              // Restore UI elements
+              if (state.lastCheckedGroup.groupName && state.lastCheckedGroup.isDynamic !== undefined) {
+                const groupType = state.lastCheckedGroup.isDynamic ? 'Dynamic' : 'Assigned';
+                const memberCount = data.lastGroupMembers ? data.lastGroupMembers.length : 0;
+                document.getElementById('deviceNameDisplay').textContent = 
+                  `- ${state.lastCheckedGroup.groupName} (${memberCount} members, ${groupType})`;
+              }
+              
+              // Show/hide dynamic query section
+              const dynamicQuerySection = document.getElementById('dynamicQuerySection');
+              if (dynamicQuerySection) {
+                if (state.lastCheckedGroup.isDynamic && state.lastCheckedGroup.membershipRule) {
+                  dynamicQuerySection.style.display = 'block';
+                  document.getElementById('dynamicQueryContent').textContent = state.lastCheckedGroup.membershipRule;
+                } else {
+                  dynamicQuerySection.style.display = 'none';
+                }
+              }
+            }
+            
             updateGroupMembersTable(data.lastGroupMembers, false);
           } else if (state.currentDisplayType === 'groupAssignments' && data.lastGroupAssignments) {
-            chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments', 'lastGroupMembers']);
+            chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments', 'lastGroupMembers', 'lastCheckedGroup']);
             updateGroupAssignmentsTable(data.lastGroupAssignments, false);
+          } else if (state.currentDisplayType === 'intuneDevices' && data.lastIntuneDevices) {
+            chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments', 'lastGroupMembers', 'lastCheckedGroup']);
+            
+            // Restore lastIntuneDevicesContext if available
+            if (data.lastIntuneDevicesContext) {
+              const context = data.lastIntuneDevicesContext;
+              
+              // Restore UI elements
+              if (context.groupName && context.summary) {
+                const summary = context.summary;
+                let displayText = `- ${context.groupName} (Members: ${summary.membersProcessed}`;
+                if (summary.isCapped && summary.totalMembers) {
+                  displayText += ` of ${summary.totalMembers} - LIMITED TO 200`;
+                }
+                displayText += `, Users: ${summary.users}, Devices: ${summary.devices}, Other: ${summary.otherSkipped} | Intune devices found: ${summary.intuneDevicesFound}, Not found: ${summary.notFound})`;
+                document.getElementById('deviceNameDisplay').textContent = displayText;
+              }
+              
+              // Hide dynamic query section
+              const dynamicQuerySection = document.getElementById('dynamicQuerySection');
+              if (dynamicQuerySection) {
+                dynamicQuerySection.style.display = 'none';
+              }
+            }
+            
+            updateIntuneDevicesTable(data.lastIntuneDevices, false);
           }
         } else {
           clearTableAndPagination();
@@ -2108,7 +2220,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Clear other data types from storage
       chrome.storage.local.remove(['lastConfigAssignments','lastAppAssignments','lastComplianceAssignments','lastPwshAssignments']);
-      chrome.storage.local.set({ lastGroupMembers: members });
+      chrome.storage.local.set({ 
+        lastGroupMembers: members,
+        lastCheckedGroup: state.lastCheckedGroup 
+      });
 
       // Update UI - show exact count and group type
       const groupType = groupInfo.isDynamic ? 'Dynamic' : 'Assigned';
@@ -2567,11 +2682,19 @@ document.addEventListener("DOMContentLoaded", () => {
           clearMembersState.selectedGroupId,
           token
         );
-        chrome.storage.local.set({ lastGroupMembers: members });
+        chrome.storage.local.set({ 
+          lastGroupMembers: members,
+          lastCheckedGroup: state.lastCheckedGroup 
+        });
         updateGroupMembersTable(members);
         
-        // Update display text
-        const displayText = `- ${clearMembersState.selectedGroupName} (${totalCount} members)`;
+        // Update display text with group type if available
+        let displayText = `- ${clearMembersState.selectedGroupName} (${totalCount} members`;
+        if (state.lastCheckedGroup && state.lastCheckedGroup.groupId === clearMembersState.selectedGroupId) {
+          const groupType = state.lastCheckedGroup.isDynamic ? 'Dynamic' : 'Assigned';
+          displayText += `, ${groupType}`;
+        }
+        displayText += ')';
         document.getElementById('deviceNameDisplay').textContent = displayText;
       }
       
@@ -3136,10 +3259,19 @@ document.addEventListener("DOMContentLoaded", () => {
           bulkAddState.selectedGroupId,
           token
         );
-        chrome.storage.local.set({ lastGroupMembers: members });
+        chrome.storage.local.set({ 
+          lastGroupMembers: members,
+          lastCheckedGroup: state.lastCheckedGroup 
+        });
         updateGroupMembersTable(members);
 
-        const displayText = `- ${bulkAddState.selectedGroupName} (${totalCount} members)`;
+        // Update display text with group type if available
+        let displayText = `- ${bulkAddState.selectedGroupName} (${totalCount} members`;
+        if (state.lastCheckedGroup && state.lastCheckedGroup.isDynamic !== undefined) {
+          const groupType = state.lastCheckedGroup.isDynamic ? 'Dynamic' : 'Assigned';
+          displayText += `, ${groupType}`;
+        }
+        displayText += ')';
         document.getElementById('deviceNameDisplay').textContent = displayText;
       }
 
@@ -3585,7 +3717,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       // Clear other data types from storage
-      chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments', 'lastGroupMembers']);
+      chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments', 'lastGroupMembers', 'lastCheckedGroup']);
       chrome.storage.local.set({ lastGroupAssignments: allAssignments });
 
       // Update UI
@@ -3642,7 +3774,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById('profileFilterInput').value = '';
     chrome.storage.local.set({ profileFilterValue: '' });
 
-    chrome.storage.local.remove(['lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments', 'lastGroupMembers']);
+    chrome.storage.local.remove(['lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments', 'lastGroupMembers', 'lastCheckedGroup']);
 
     // Clear table selection before loading new assignments
     clearTableSelection();
@@ -3806,7 +3938,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById('profileFilterInput').value = '';
     chrome.storage.local.set({ profileFilterValue: '' });
 
-    chrome.storage.local.remove(['lastConfigAssignments','lastAppAssignments','lastPwshAssignments','lastGroupMembers']);
+    chrome.storage.local.remove(['lastConfigAssignments','lastAppAssignments','lastPwshAssignments','lastGroupMembers','lastCheckedGroup']);
 
     // Clear table selection before loading new assignments
     clearTableSelection();
@@ -4206,7 +4338,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById('profileFilterInput').value = '';
     chrome.storage.local.set({ profileFilterValue: '' });
 
-    chrome.storage.local.remove(['lastConfigAssignments','lastComplianceAssignments','lastPwshAssignments','lastGroupMembers']);
+    chrome.storage.local.remove(['lastConfigAssignments','lastComplianceAssignments','lastPwshAssignments','lastGroupMembers','lastCheckedGroup']);
 
     // Clear table selection before loading new assignments
     clearTableSelection();
@@ -4392,7 +4524,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById('profileFilterInput').value = '';
     chrome.storage.local.set({ profileFilterValue: '' });
 
-    chrome.storage.local.remove(['lastConfigAssignments','lastAppAssignments','lastComplianceAssignments','lastGroupMembers']);
+    chrome.storage.local.remove(['lastConfigAssignments','lastAppAssignments','lastComplianceAssignments','lastGroupMembers','lastCheckedGroup']);
 
     // Clear table selection before loading new assignments
     clearTableSelection();
@@ -4683,7 +4815,7 @@ document.addEventListener("DOMContentLoaded", () => {
       // Use Notes (static value) + activationlockbypasscode (contains UPN) filter
       // Match the exact URL format that works in the Intune portal
       const encodedUpn = encodeURIComponent(userPrincipalName);
-      const url = `https://graph.microsoft.com/beta/deviceManagement/managedDevices?$filter=(Notes%20eq%20%27bc3e5c73-e224-4e63-9b2b-0c36784b7e80%27)%20and%20((contains(activationlockbypasscode,%20%27${encodedUpn}%27)))&$select=deviceName,deviceType,azureADDeviceId,id,userPrincipalName&$top=50&$skipToken=Skip=%270%27`;
+      const url = `https://graph.microsoft.com/beta/deviceManagement/managedDevices?$filter=(Notes%20eq%20%27bc3e5c73-e224-4e63-9b2b-0c36784b7e80%27)%20and%20((contains(activationlockbypasscode,%20%27${encodedUpn}%27)))&$select=deviceName,deviceType,operatingSystem,ownerType,lastSyncDateTime,osVersion,complianceState,azureADDeviceId,id,userPrincipalName&$top=50&$skipToken=Skip=%270%27`;
       
       logMessage(`fetchDevicesByPrimaryUser: Fetching devices for UPN: ${userPrincipalName}`);
       
@@ -5146,6 +5278,286 @@ document.addEventListener("DOMContentLoaded", () => {
   // End of Create Device Group from Users Feature
   // ══════════════════════════════════════════════════════════════
 
+  // ══════════════════════════════════════════════════════════════
+  // Check Intune Devices Feature
+  // ══════════════════════════════════════════════════════════════
+
+  // Fetch Intune managed device by Azure AD Device ID
+  const getManagedDevicesByAzureAdDeviceId = async (azureAdDeviceId, token) => {
+    if (!azureAdDeviceId) {
+      logMessage(`getManagedDevicesByAzureAdDeviceId: Device ID is ${azureAdDeviceId} - skipping`);
+      return [];
+    }
+
+    const headers = {
+      "Authorization": token,
+      "Content-Type": "application/json"
+    };
+
+    try {
+      // Escape single quotes in azureAdDeviceId for OData filter (double them)
+      const escapedDeviceId = azureAdDeviceId.replace(/'/g, "''");
+      
+      // Filter by azureADDeviceId and select required fields for display
+      const url = `https://graph.microsoft.com/beta/deviceManagement/managedDevices?$filter=azureADDeviceId eq '${escapedDeviceId}'&$select=deviceName,operatingSystem,ownerType,lastSyncDateTime,osVersion,complianceState,azureADDeviceId,id,userPrincipalName,deviceType&$top=50`;
+      
+      logMessage(`getManagedDevicesByAzureAdDeviceId: Fetching device with Azure AD Device ID: ${azureAdDeviceId}`);
+      
+      const rawResponse = await fetch(url, { method: 'GET', headers });
+      const responseText = await rawResponse.text();
+      
+      if (!rawResponse.ok) {
+        logMessage(`getManagedDevicesByAzureAdDeviceId: HTTP ${rawResponse.status} for ${azureAdDeviceId}: ${responseText.substring(0, 300)}`);
+        return [];
+      }
+
+      const response = responseText ? JSON.parse(responseText) : {};
+      
+      if (!response.value) {
+        logMessage(`getManagedDevicesByAzureAdDeviceId: No 'value' in response for ${azureAdDeviceId}: ${responseText.substring(0, 300)}`);
+        return [];
+      }
+
+      logMessage(`getManagedDevicesByAzureAdDeviceId: Found ${response.value.length} devices for ${azureAdDeviceId}`);
+      return response.value;
+    } catch (error) {
+      logMessage(`getManagedDevicesByAzureAdDeviceId: Error for ${azureAdDeviceId}: ${error.message}`);
+      return [];
+    }
+  };
+
+  // Main handler for Check Intune Devices button
+  const handleCheckIntuneDevices = async () => {
+    logMessage("checkIntuneDevices clicked");
+    const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
+    if (selected.length !== 1) {
+      showResultNotification('Select exactly one group.', 'error');
+      return;
+    }
+
+    document.getElementById('profileFilterInput').value = '';
+    chrome.storage.local.set({ profileFilterValue: '' });
+
+    clearTableSelection();
+
+    const groupId = selected[0].value;
+    const groupName = selected[0].dataset.groupName;
+
+    logMessage(`checkIntuneDevices: Selected group - ID: ${groupId}, Name: ${groupName}`);
+
+    try {
+      const token = await getToken();
+      logMessage("checkIntuneDevices: Token retrieved successfully");
+
+      showProcessingNotification(`Finding Intune devices for members of group "${groupName}"...`);
+
+      // Step 1: Enumerate all group members (with pagination)
+      logMessage('checkIntuneDevices: Step 1 - Enumerating group members');
+      const allMembers = await resolveGroupMembers(groupId, false, token);
+      
+      logMessage(`checkIntuneDevices: Retrieved ${allMembers.length} members`);
+
+      // Cap at 200 members
+      const MEMBER_LIMIT = 200;
+      const isCapped = allMembers.length > MEMBER_LIMIT;
+      const members = isCapped ? allMembers.slice(0, MEMBER_LIMIT) : allMembers;
+      
+      if (isCapped) {
+        logMessage(`checkIntuneDevices: Group has ${allMembers.length} members, capping at ${MEMBER_LIMIT}`);
+      }
+
+      // Step 2: Partition members by type
+      const users = members.filter(m => m['@odata.type'] === '#microsoft.graph.user');
+      const devices = members.filter(m => m['@odata.type'] === '#microsoft.graph.device');
+      const otherMembers = members.filter(m => 
+        !['#microsoft.graph.user', '#microsoft.graph.device'].includes(m['@odata.type'])
+      );
+
+      logMessage(`checkIntuneDevices: Partitioned - Users: ${users.length}, Devices: ${devices.length}, Others: ${otherMembers.length}`);
+
+      // Step 3: Resolve Intune devices
+      const allIntuneDevices = [];
+      const deviceMap = new Map(); // For deduplication by azureADDeviceId
+      let notFoundCount = 0;
+
+      // 3a: Resolve devices for users (reuse existing logic)
+      logMessage('checkIntuneDevices: Step 3a - Resolving devices for users');
+      for (let i = 0; i < users.length; i++) {
+        const user = users[i];
+        if (!user.userPrincipalName) {
+          logMessage(`checkIntuneDevices: User ${user.displayName} has no UPN - skipping`);
+          notFoundCount++;
+          continue;
+        }
+
+        const userDevices = await fetchDevicesByPrimaryUser(user.userPrincipalName, token);
+        
+        for (const device of userDevices) {
+          const deviceKey = device.azureADDeviceId || device.id;
+          if (!deviceMap.has(deviceKey)) {
+            deviceMap.set(deviceKey, device);
+            allIntuneDevices.push(device);
+          }
+        }
+
+        if (userDevices.length === 0) {
+          notFoundCount++;
+        }
+      }
+
+      // 3b: Resolve devices by Entra device id
+      logMessage('checkIntuneDevices: Step 3b - Resolving devices by Entra device id');
+      for (let i = 0; i < devices.length; i++) {
+        const device = devices[i];
+        if (!device.deviceId) {
+          logMessage(`checkIntuneDevices: Device ${device.displayName} has no deviceId - skipping`);
+          notFoundCount++;
+          continue;
+        }
+
+        const intuneDevices = await getManagedDevicesByAzureAdDeviceId(device.deviceId, token);
+        
+        for (const intuneDevice of intuneDevices) {
+          const deviceKey = intuneDevice.azureADDeviceId || intuneDevice.id;
+          if (!deviceMap.has(deviceKey)) {
+            deviceMap.set(deviceKey, intuneDevice);
+            allIntuneDevices.push(intuneDevice);
+          }
+        }
+
+        if (intuneDevices.length === 0) {
+          notFoundCount++;
+        }
+      }
+
+      logMessage(`checkIntuneDevices: Found ${allIntuneDevices.length} unique Intune devices`);
+
+      // Step 4: Build summary and display
+      const summary = {
+        membersProcessed: members.length,
+        totalMembers: allMembers.length,
+        isCapped: isCapped,
+        users: users.length,
+        devices: devices.length,
+        otherSkipped: otherMembers.length,
+        intuneDevicesFound: allIntuneDevices.length,
+        notFound: notFoundCount
+      };
+
+      // Cache the context for restoration on popup reload
+      const intuneDevicesContext = {
+        groupId: groupId,
+        groupName: groupName,
+        summary: summary
+      };
+
+      // Clear other data types from storage
+      chrome.storage.local.remove(['lastConfigAssignments','lastAppAssignments','lastComplianceAssignments','lastPwshAssignments','lastGroupMembers','lastCheckedGroup']);
+      chrome.storage.local.set({ 
+        lastIntuneDevices: allIntuneDevices,
+        lastIntuneDevicesContext: intuneDevicesContext
+      });
+
+      // Update UI with summary
+      let displayText = `- ${groupName} (Members: ${summary.membersProcessed}`;
+      if (summary.isCapped) {
+        displayText += ` of ${summary.totalMembers} - LIMITED TO 200`;
+      }
+      displayText += `, Users: ${summary.users}, Devices: ${summary.devices}, Other: ${summary.otherSkipped} | Intune devices found: ${summary.intuneDevicesFound}, Not found: ${summary.notFound})`;
+      document.getElementById('deviceNameDisplay').textContent = displayText;
+
+      // Hide dynamic query section
+      const dynamicQuerySection = document.getElementById('dynamicQuerySection');
+      if (dynamicQuerySection) {
+        dynamicQuerySection.style.display = 'none';
+      }
+
+      updateIntuneDevicesTable(allIntuneDevices);
+
+      if (allIntuneDevices.length === 0) {
+        showResultNotification(`No Intune devices found for members of group "${groupName}".`, 'warning');
+      } else {
+        showResultNotification(`Successfully found ${allIntuneDevices.length} Intune devices for group "${groupName}".`, 'success');
+      }
+      
+    } catch (error) {
+      logMessage(`checkIntuneDevices: Error - ${error.message}`);
+      
+      let errorMessage = 'Failed to load Intune devices: ' + error.message;
+      
+      // Provide more specific error messages for common issues
+      if (error.message.includes('403') || error.message.includes('Forbidden')) {
+        errorMessage = `Access denied. You do not have permission to view members or devices. Contact your administrator.`;
+      } else if (error.message.includes('404') || error.message.includes('Not Found')) {
+        errorMessage = `Group "${groupName}" was not found or has been deleted.`;
+      } else if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+        errorMessage = 'Authentication failed. Please refresh the page and try again.';
+      }
+      
+      showResultNotification(errorMessage, 'error');
+    }
+  };
+
+  // Update table with Intune devices
+  const updateIntuneDevicesTable = (devices, updateDisplay = true) => {
+    if (updateDisplay) {
+      state.currentDisplayType = 'intuneDevices';
+      chrome.storage.local.set({ currentDisplayType: state.currentDisplayType });
+    }
+    state.pagination.itemsPerPage = 10;
+    updateTableHeaders('intuneDevices');
+    
+    // Map raw devices to flattened data first
+    const flattenedData = devices.map(d => ({
+      deviceName: d.deviceName || '',
+      ownership: d.ownerType || '',
+      complianceState: d.complianceState || '',
+      platform: normalizePlatform(d.operatingSystem, d.deviceType) || d.operatingSystem || '',
+      osVersion: d.osVersion || '',
+      userPrincipalName: d.userPrincipalName || '',
+      lastSync: d.lastSyncDateTime || '',
+      id: d.id || '',
+      azureADDeviceId: d.azureADDeviceId || ''
+    }));
+
+    // Sort by current sort field
+    const sortField = state.sortField || 'deviceName';
+    flattenedData.sort((a, b) => {
+      const aVal = a[sortField] || '';
+      const bVal = b[sortField] || '';
+      
+      // For date fields, parse as dates
+      if (sortField === 'lastSync') {
+        const aDate = aVal ? new Date(aVal).getTime() : 0;
+        const bDate = bVal ? new Date(bVal).getTime() : 0;
+        return aDate - bDate;
+      }
+      
+      // For other fields, use string comparison
+      return aVal.toString().localeCompare(bVal.toString());
+    });
+    
+    if (state.sortDirection === 'desc') flattenedData.reverse();
+
+    updatePaginationState(flattenedData);
+
+    renderCurrentPage();
+    updatePaginationControls();
+
+    // Update all sortable headers to show current sort
+    const sortableHeaders = document.querySelectorAll('th.sortable');
+    sortableHeaders.forEach(header => {
+      header.classList.remove('desc', 'asc');
+      if (header.dataset.sortField === sortField) {
+        header.classList.add(state.sortDirection);
+      }
+    });
+  };
+
+  // ══════════════════════════════════════════════════════════════
+  // End of Check Intune Devices Feature
+  // ══════════════════════════════════════════════════════════════
+
   // ── Collect Logs Modal Functions ───────────────────────────────────────
   
   // Supported environment variables for log paths
@@ -5467,6 +5879,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("appsAssignment").addEventListener("click", handleAppsAssignment);
   document.getElementById("pwshProfiles").addEventListener("click", handlePwshProfiles);
   document.getElementById("collectLogs").addEventListener("click", handleCollectLogs);
+  document.getElementById("checkIntuneDevices").addEventListener("click", handleCheckIntuneDevices);
   document.getElementById("createGroup").addEventListener("click", handleCreateGroup);
   
   // Bulk Remove Modal Event Listeners
@@ -5623,9 +6036,20 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener('click', function (e) {
     // Check if the clicked element is a sortable header
     if (e.target && e.target.classList.contains('sortable')) {
-      state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
-      e.target.classList.toggle('asc');
-      e.target.classList.toggle('desc');
+      // Get the sort field from data attribute
+      const newSortField = e.target.dataset.sortField;
+      
+      // If clicking the same field, toggle direction; otherwise reset to asc
+      if (newSortField && state.sortField === newSortField) {
+        state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
+      } else if (newSortField) {
+        state.sortField = newSortField;
+        state.sortDirection = 'asc';
+      } else {
+        // Fallback for headers without data-sort-field (backwards compatibility)
+        state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
+      }
+      
       // Re-render the current table based on display type
       if (state.currentDisplayType === 'config') {
         chrome.storage.local.get(['lastConfigAssignments'], (data) => {
@@ -5650,6 +6074,10 @@ document.addEventListener("DOMContentLoaded", () => {
       } else if (state.currentDisplayType === 'groupAssignments') {
         chrome.storage.local.get(['lastGroupAssignments'], (data) => {
           if (data.lastGroupAssignments) updateGroupAssignmentsTable(data.lastGroupAssignments, false);
+        });
+      } else if (state.currentDisplayType === 'intuneDevices') {
+        chrome.storage.local.get(['lastIntuneDevices'], (data) => {
+          if (data.lastIntuneDevices) updateIntuneDevicesTable(data.lastIntuneDevices, false);
         });
       }
     }
