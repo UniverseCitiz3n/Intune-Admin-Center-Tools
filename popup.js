@@ -3824,10 +3824,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // ── Analytics Initialization ──────────────────────────────────────────
   // Initialize analytics when popup opens
   if (typeof Analytics !== 'undefined') {
-    Analytics.init().then(() => {
-      Analytics.trackPageView('popup');
-    });
-
     // Update analytics toggle UI based on current state
     const updateAnalyticsToggleUI = () => {
       const toggleText = document.getElementById('analyticsToggleText');
@@ -3835,6 +3831,12 @@ document.addEventListener("DOMContentLoaded", () => {
         toggleText.textContent = Analytics.isEnabled() ? 'Analytics: Enabled' : 'Analytics: Disabled';
       }
     };
+
+    Analytics.init().then(() => {
+      Analytics.trackPageView('popup');
+      // Update UI after Analytics.init() completes to avoid race condition
+      updateAnalyticsToggleUI();
+    });
 
     // Analytics toggle handler
     const analyticsToggle = document.getElementById('analyticsToggleOption');
@@ -3851,10 +3853,5 @@ document.addEventListener("DOMContentLoaded", () => {
         updateAnalyticsToggleUI();
       });
     }
-
-    // Update UI on load
-    chrome.storage.local.get(['analyticsEnabled'], (data) => {
-      updateAnalyticsToggleUI();
-    });
   }
 });
