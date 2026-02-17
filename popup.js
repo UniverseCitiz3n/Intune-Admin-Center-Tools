@@ -354,6 +354,17 @@ document.addEventListener("DOMContentLoaded", () => {
         item.configType || '',
         item.intent || ''
       ]);
+    } else if (state.currentDisplayType === 'intuneDevices') {
+      headers = ['Device Name', 'Ownership', 'Compliance', 'Platform', 'OS Version', 'UPN', 'Last Sync'];
+      rows = data.map(item => [
+        item.deviceName || '',
+        item.ownership || '',
+        item.complianceState || '',
+        item.platform || '',
+        item.osVersion || '',
+        item.userPrincipalName || '',
+        item.lastSync || ''
+      ]);
     }
 
     // Escape CSV values (handle commas, quotes, newlines)
@@ -384,7 +395,8 @@ document.addEventListener("DOMContentLoaded", () => {
       'compliance': 'compliance_assignments',
       'pwsh': 'powershell_scripts',
       'groupMembers': 'group_members',
-      'groupAssignments': 'group_assignments'
+      'groupAssignments': 'group_assignments',
+      'intuneDevices': 'intune_devices'
     };
     const filename = `intune_${typeNames[state.currentDisplayType] || 'export'}_${timestamp}.csv`;
     link.setAttribute('download', filename);
