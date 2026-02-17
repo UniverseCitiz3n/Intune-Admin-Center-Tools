@@ -5774,21 +5774,7 @@ document.addEventListener("DOMContentLoaded", () => {
       updateDeviceNameDisplay(deviceData);
 
       const userPrincipalName = deviceData.userPrincipalName;
-      if (!userPrincipalName || userPrincipalName === 'Unknown user') {
-        throw new Error("No primary user found for this device.");
-      }
-
-      // Get the user ID
-      const userData = await fetchJSON(`https://graph.microsoft.com/beta/users?$filter=userPrincipalName eq '${encodeURIComponent(userPrincipalName)}'`, {
-        method: "GET",
-        headers: { "Authorization": token, "Content-Type": "application/json" }
-      });
-
-      if (!userData.value || userData.value.length === 0) {
-        throw new Error("User not found in Azure AD.");
-      }
-
-      const userObjectId = userData.value[0].id;
+      const hasValidPrimaryUser = userPrincipalName && userPrincipalName !== 'Unknown user';
 
       // Format the log paths for the API - with proper escaping
       const logPathsFormatted = [];
@@ -5805,18 +5791,47 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error("No valid log paths provided.");
       }
 
-      // Create raw JSON string with exactly the format needed
-      const rawJsonBody = `{
+      let requestUrl;
+      let rawJsonBody;
+
+      if (hasValidPrimaryUser) {
+        // Get the user ID for user-based endpoint
+        const userData = await fetchJSON(`https://graph.microsoft.com/beta/users?$filter=userPrincipalName eq '${encodeURIComponent(userPrincipalName)}'`, {
+          method: "GET",
+          headers: { "Authorization": token, "Content-Type": "application/json" }
+        });
+
+        if (!userData.value || userData.value.length === 0) {
+          throw new Error("User not found in Azure AD.");
+        }
+
+        const userObjectId = userData.value[0].id;
+
+        // Create raw JSON string with exactly the format needed for user-based endpoint
+        rawJsonBody = `{
         "customLogFolders": [${logPathsFormatted.join(', ')}],
         "id": "${userObjectId}_${mdmDeviceId}_${appId}"
       }`;
 
-      logMessage(`collectLogs: Log paths: ${JSON.stringify(logPathsFormatted)}`);
-      logMessage(`collectLogs: Requesting logs for user ${userObjectId}, device ${mdmDeviceId}, app ${appId}`);
+        logMessage(`collectLogs: Log paths: ${JSON.stringify(logPathsFormatted)}`);
+        logMessage(`collectLogs: Requesting logs for user ${userObjectId}, device ${mdmDeviceId}, app ${appId}`);
+
+        // Use user-based endpoint
+        requestUrl = `https://graph.microsoft.com/beta/users('${userObjectId}')/mobileAppTroubleshootingEvents('${mdmDeviceId}_${appId}')/appLogCollectionRequests`;
+      } else {
+        // Create raw JSON string for device-based endpoint (shared devices without primary user)
+        rawJsonBody = `{
+        "customLogFolders": [${logPathsFormatted.join(', ')}]
+      }`;
+
+        logMessage(`collectLogs: Log paths: ${JSON.stringify(logPathsFormatted)}`);
+        logMessage(`collectLogs: Requesting logs for shared device ${mdmDeviceId}, app ${appId} (no primary user)`);
+
+        // Use device-based endpoint for shared devices
+        requestUrl = `https://graph.microsoft.com/beta/deviceManagement/managedDevices('${mdmDeviceId}')/appLogCollectionRequests`;
+      }
 
       // Make the API call
-      const requestUrl = `https://graph.microsoft.com/beta/users('${userObjectId}')/mobileAppTroubleshootingEvents('${mdmDeviceId}_${appId}')/appLogCollectionRequests`;
-
       const logResult = await fetchJSON(requestUrl, {
         method: "POST",
         headers: {
