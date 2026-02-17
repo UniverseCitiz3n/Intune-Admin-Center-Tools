@@ -5791,11 +5791,10 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error("No valid log paths provided.");
       }
 
-      let requestUrl;
-      let rawJsonBody;
+      let userObjectId;
 
       if (hasValidPrimaryUser) {
-        // Get the user ID for user-based endpoint
+        // Get the user ID for devices with a primary user
         const userData = await fetchJSON(`https://graph.microsoft.com/beta/users?$filter=userPrincipalName eq '${encodeURIComponent(userPrincipalName)}'`, {
           method: "GET",
           headers: { "Authorization": token, "Content-Type": "application/json" }
@@ -5805,31 +5804,24 @@ document.addEventListener("DOMContentLoaded", () => {
           throw new Error("User not found in Azure AD.");
         }
 
-        const userObjectId = userData.value[0].id;
+        userObjectId = userData.value[0].id;
+        logMessage(`collectLogs: Requesting logs for user ${userObjectId}, device ${mdmDeviceId}, app ${appId}`);
+      } else {
+        // For shared devices without primary user, use placeholder user ID (matches Intune GUI behavior)
+        userObjectId = '00000000-0000-0000-0000-000000000000';
+        logMessage(`collectLogs: Requesting logs for shared device ${mdmDeviceId}, app ${appId} (using placeholder user ID)`);
+      }
 
-        // Create raw JSON string with exactly the format needed for user-based endpoint
-        rawJsonBody = `{
+      // Create raw JSON string with exactly the format needed
+      const rawJsonBody = `{
         "customLogFolders": [${logPathsFormatted.join(', ')}],
         "id": "${userObjectId}_${mdmDeviceId}_${appId}"
       }`;
 
-        logMessage(`collectLogs: Log paths: ${JSON.stringify(logPathsFormatted)}`);
-        logMessage(`collectLogs: Requesting logs for user ${userObjectId}, device ${mdmDeviceId}, app ${appId}`);
+      logMessage(`collectLogs: Log paths: ${JSON.stringify(logPathsFormatted)}`);
 
-        // Use user-based endpoint
-        requestUrl = `https://graph.microsoft.com/beta/users('${userObjectId}')/mobileAppTroubleshootingEvents('${mdmDeviceId}_${appId}')/appLogCollectionRequests`;
-      } else {
-        // Create raw JSON string for device-based endpoint (shared devices without primary user)
-        rawJsonBody = `{
-        "customLogFolders": [${logPathsFormatted.join(', ')}]
-      }`;
-
-        logMessage(`collectLogs: Log paths: ${JSON.stringify(logPathsFormatted)}`);
-        logMessage(`collectLogs: Requesting logs for shared device ${mdmDeviceId}, app ${appId} (no primary user)`);
-
-        // Use device-based endpoint for shared devices
-        requestUrl = `https://graph.microsoft.com/beta/deviceManagement/managedDevices('${mdmDeviceId}')/appLogCollectionRequests`;
-      }
+      // Use user-based endpoint for both cases (matches Intune GUI behavior)
+      const requestUrl = `https://graph.microsoft.com/beta/users('${userObjectId}')/mobileAppTroubleshootingEvents('${mdmDeviceId}_${appId}')/appLogCollectionRequests`;
 
       // Make the API call
       const logResult = await fetchJSON(requestUrl, {
