@@ -71,6 +71,22 @@ jobs:
           fi
           
           echo "✅ Google Analytics credentials configured"
+
+      - name: Validate manifest version matches release tag
+        run: |
+          TAG_NAME="${{ github.event.release.tag_name }}"
+          EXPECTED_VERSION="${TAG_NAME#v}"
+          MANIFEST_VERSION=$(jq -r '.version' manifest.json)
+
+          echo "Expected version from tag: $EXPECTED_VERSION"
+          echo "Manifest version: $MANIFEST_VERSION"
+
+          if [ "$MANIFEST_VERSION" != "$EXPECTED_VERSION" ]; then
+            echo "❌ Version mismatch: manifest.json version must match release tag before publishing."
+            exit 1
+          fi
+
+          echo "✅ Manifest version matches release tag"
       
       - name: Create extension package
         run: |
