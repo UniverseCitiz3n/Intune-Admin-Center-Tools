@@ -20,15 +20,33 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       
+      - name: Update manifest version from release tag
+        run: |
+          # Extract version from release tag (e.g., v1.5.0 -> 1.5.0, v1.5.0-beta.1 -> 1.5.0-beta.1)
+          TAG_NAME="${{ github.event.release.tag_name }}"
+          VERSION="${TAG_NAME#v}"  # Remove 'v' prefix if present
+          
+          # Read current version from manifest.json for logging
+          CURRENT_VERSION=$(jq -r '.version' manifest.json)
+          echo "Current manifest version: $CURRENT_VERSION"
+          echo "Release tag: $TAG_NAME"
+          echo "New version: $VERSION"
+          
+          # Update version in manifest.json
+          jq --arg version "$VERSION" '.version = $version' manifest.json > manifest.json.tmp
+          mv manifest.json.tmp manifest.json
+          
+          echo "✅ Version updated to: $VERSION"
+      
       - name: Add beta indicator to manifest
         if: github.event.release.prerelease == true
         run: |
-          # Read current version from manifest.json for logging
-          CURRENT_VERSION=$(jq -r '.version' manifest.json)
-          echo "Current version: $CURRENT_VERSION"
-          
           # Update the extension name to indicate beta version
           jq '.name = "Intune Admin Center Tools (Beta)"' manifest.json > manifest.json.tmp
+          mv manifest.json.tmp manifest.json
+
+          # Update the extension icons to beta versions
+          jq '.icons = {"16": "extension_beta_icon_16.png", "32": "extension_beta_icon_32.png", "48": "extension_beta_icon_48.png", "128": "extension_beta_icon_128.png"}' manifest.json > manifest.json.tmp
           mv manifest.json.tmp manifest.json
           
           echo "✅ Beta indicator added to manifest"
@@ -43,7 +61,32 @@ jobs:
           # Replace GA_API_SECRET placeholder with actual secret value
           sed -i "s/const GA_API_SECRET = 'XXXXXXXXXXXXXX'/const GA_API_SECRET = '${{ secrets.GA_API_SECRET }}'/g" analytics.js
           
+          # Set release type based on whether this is a prerelease (beta) or not
+          if [ "${{ github.event.release.prerelease }}" == "true" ]; then
+            sed -i "s/const RELEASE_TYPE = 'prod'/const RELEASE_TYPE = 'beta'/g" analytics.js
+            echo "✅ Release type set to: beta"
+          else
+            # Prod release - keep default 'prod' value
+            echo "✅ Release type set to: prod"
+          fi
+          
           echo "✅ Google Analytics credentials configured"
+
+      - name: Validate manifest version matches release tag
+        run: |
+          TAG_NAME="${{ github.event.release.tag_name }}"
+          EXPECTED_VERSION="${TAG_NAME#v}"
+          MANIFEST_VERSION=$(jq -r '.version' manifest.json)
+
+          echo "Expected version from tag: $EXPECTED_VERSION"
+          echo "Manifest version: $MANIFEST_VERSION"
+
+          if [ "$MANIFEST_VERSION" != "$EXPECTED_VERSION" ]; then
+            echo "❌ Version mismatch: manifest.json version must match release tag before publishing."
+            exit 1
+          fi
+
+          echo "✅ Manifest version matches release tag"
       
       - name: Create extension package
         run: |
@@ -55,10 +98,15 @@ jobs:
             popup.html \
             popup.js \
             style.css \
+            analytics.js \
             extension_icon16.png \
             extension_icon32.png \
             extension_icon48.png \
             extension_icon128.png \
+            extension_beta_icon_16.png \
+            extension_beta_icon_32.png \
+            extension_beta_icon_48.png \
+            extension_beta_icon_128.png \
             js/
           
           echo "✅ Extension package created successfully"

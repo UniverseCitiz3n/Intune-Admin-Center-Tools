@@ -28,8 +28,11 @@ const Analytics = (() => {
   const GA_API_SECRET = 'XXXXXXXXXXXXXX'; // Replace with actual API Secret
   const MEASUREMENT_PROTOCOL_URL = `https://www.google-analytics.com/mp/collect?measurement_id=${GA_MEASUREMENT_ID}&api_secret=${GA_API_SECRET}`;
   
+  // Release type - Set during build process (beta or prod)
+  const RELEASE_TYPE = 'prod'; // Will be replaced during build for beta releases
+  
   let clientId = null;
-  let analyticsEnabled = false; // Disabled by default, user can opt-in
+  let analyticsEnabled = false; // Disabled by default for prod, enabled for beta
   let sessionId = null;
 
   // Initialize analytics
@@ -37,11 +40,26 @@ const Analytics = (() => {
     // Load settings from chrome.storage
     const data = await chrome.storage.local.get(['analyticsEnabled', 'analyticsClientId', 'analyticsSessionId']);
     
-    // Check if user has opted out
-    if (data.analyticsEnabled === false) {
-      analyticsEnabled = false;
-      console.log('[Analytics] User has opted out of analytics');
-      return;
+    // For beta releases, analytics is always enabled and cannot be disabled
+    // For prod releases, analytics is disabled by default (requires user opt-in)
+    if (RELEASE_TYPE === 'beta') {
+      // Beta: always enabled, cannot be disabled
+      analyticsEnabled = true;
+      // Ensure the enabled state is stored
+      await chrome.storage.local.set({ analyticsEnabled: true });
+      console.log('[Analytics] Beta release - analytics always enabled');
+    } else {
+      // Prod: disabled by default, requires opt-in
+      if (data.analyticsEnabled === true) {
+        analyticsEnabled = true;
+      } else {
+        analyticsEnabled = false;
+        // Log only if user has explicitly opted out (vs never set)
+        if (data.analyticsEnabled === false) {
+          console.log('[Analytics] User has opted out of analytics');
+        }
+        return;
+      }
     }
     
     // Generate or retrieve client ID (anonymous, persistent identifier)
@@ -56,7 +74,7 @@ const Analytics = (() => {
     sessionId = Date.now().toString();
     await chrome.storage.local.set({ analyticsSessionId: sessionId });
     
-    console.log('[Analytics] Initialized with client ID:', clientId);
+    console.log('[Analytics] Initialized with client ID:', clientId, 'Release type:', RELEASE_TYPE);
   };
 
   // Generate anonymous client ID
@@ -87,6 +105,7 @@ const Analytics = (() => {
           session_id: sessionId,
           engagement_time_msec: '100',
           extension_version: extensionVersion,
+          release_type: RELEASE_TYPE,
           ...eventParams
         }
       }]
@@ -150,6 +169,12 @@ const Analytics = (() => {
 
   // Disable analytics
   const disable = async () => {
+    // Beta releases cannot disable analytics
+    if (RELEASE_TYPE === 'beta') {
+      console.log('[Analytics] Cannot disable analytics in beta releases');
+      return false;
+    }
+    
     // Send event before disabling
     if (analyticsEnabled && clientId) {
       await sendEvent('analytics_disabled');
@@ -157,11 +182,17 @@ const Analytics = (() => {
     analyticsEnabled = false;
     await chrome.storage.local.set({ analyticsEnabled: false });
     console.log('[Analytics] Disabled');
+    return true;
   };
 
   // Check if analytics is enabled
   const isEnabled = () => {
     return analyticsEnabled;
+  };
+  
+  // Check if this is a beta release
+  const isBeta = () => {
+    return RELEASE_TYPE === 'beta';
   };
 
   // Generic event tracking
@@ -178,7 +209,8 @@ const Analytics = (() => {
     trackEvent,
     enable,
     disable,
-    isEnabled
+    isEnabled,
+    isBeta
   };
 })();
 
