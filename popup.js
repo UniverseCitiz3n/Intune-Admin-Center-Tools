@@ -124,6 +124,12 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   // Build column filter UI from data
+  const escapeHtml = (str) => {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  };
+
   const buildColumnFilters = (data) => {
     const container = document.getElementById('columnFiltersContainer');
     if (!container) return;
@@ -165,18 +171,18 @@ document.addEventListener("DOMContentLoaded", () => {
         btnLabel = [...selectedVals].join(', ');
       }
 
-      html += `<div class="column-filter-dropdown" data-filter-key="${key}">
-        <button class="column-filter-btn${activeClass}" data-filter-key="${key}">
-          <span class="column-filter-selected-text">${btnLabel}</span>
+      html += `<div class="column-filter-dropdown" data-filter-key="${escapeHtml(key)}">
+        <button class="column-filter-btn${activeClass}" data-filter-key="${escapeHtml(key)}">
+          <span class="column-filter-selected-text">${escapeHtml(btnLabel)}</span>
           <i class="material-icons">arrow_drop_down</i>
         </button>
-        <div class="column-filter-menu" data-filter-key="${key}">`;
+        <div class="column-filter-menu" data-filter-key="${escapeHtml(key)}">`;
       
       info.values.forEach(val => {
         const checked = !hasSelection || (selectedVals && selectedVals.has(val)) ? 'checked' : '';
         html += `<label class="column-filter-option">
-          <input type="checkbox" value="${val}" data-filter-key="${key}" ${checked}>
-          <span>${val}</span>
+          <input type="checkbox" value="${escapeHtml(val)}" data-filter-key="${escapeHtml(key)}" ${checked}>
+          <span>${escapeHtml(val)}</span>
         </label>`;
       });
 
@@ -209,7 +215,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const checkedValues = new Set();
         allCheckboxes.forEach(c => { if (c.checked) checkedValues.add(c.value); });
 
-        // If all checked or none checked, clear filter for this column
+        // If all checked or none checked, clear filter (show all results)
         if (checkedValues.size === allCheckboxes.length || checkedValues.size === 0) {
           delete state.columnFilters[filterKey];
         } else {
@@ -229,13 +235,6 @@ document.addEventListener("DOMContentLoaded", () => {
           btn.querySelector('.column-filter-selected-text').textContent = colInfo.label;
         }
       });
-    });
-
-    // Close menus when clicking outside
-    document.addEventListener('click', (e) => {
-      if (!e.target.closest('.column-filter-dropdown')) {
-        container.querySelectorAll('.column-filter-menu.open').forEach(m => m.classList.remove('open'));
-      }
     });
   };
 
@@ -6046,6 +6045,16 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  // Close column filter menus when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.column-filter-dropdown')) {
+      const container = document.getElementById('columnFiltersContainer');
+      if (container) {
+        container.querySelectorAll('.column-filter-menu.open').forEach(m => m.classList.remove('open'));
+      }
+    }
+  });
+
   // ── Analytics Tracking (Event Delegation) ─────────────────────────────
   // Automatically tracks clicks on any element with an id attribute.
   // New buttons are tracked by default — no extra code needed.
@@ -6382,6 +6391,8 @@ document.addEventListener("DOMContentLoaded", () => {
           document.getElementById('groupSearchInput').value = '';
           document.getElementById('profileFilterInput').value = '';
           clearColumnFilters();
+
+          // Reset pagination
           document.getElementById('paginationContainer').style.display = 'none';
 
           showResultNotification('Extension storage cleared successfully. All cached data has been reset (theme and analytics preferences preserved).', 'success');
