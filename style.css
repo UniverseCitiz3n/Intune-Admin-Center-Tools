@@ -692,6 +692,104 @@ table {
   margin-bottom: 0;
 }
 
+/* Column filters container */
+.column-filters-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.column-filter-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.column-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 16px;
+  background: var(--card-bg, #fff);
+  color: var(--text-primary, #333);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.column-filter-btn:hover {
+  border-color: var(--accent-color, #26a69a);
+}
+
+.column-filter-btn.active {
+  border-color: var(--accent-color, #26a69a);
+  background-color: var(--accent-color, #26a69a);
+  color: #fff;
+}
+
+.column-filter-btn .material-icons {
+  font-size: 14px;
+}
+
+.column-filter-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  min-width: 140px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  margin-top: 4px;
+  padding: 4px 0;
+}
+
+.column-filter-menu.open {
+  display: block;
+}
+
+.column-filter-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--text-primary, #333);
+  transition: background-color 0.15s;
+}
+
+.column-filter-option:hover {
+  background-color: var(--table-hover, #f5f5f5);
+}
+
+.column-filter-option input[type="checkbox"] {
+  margin: 0;
+  pointer-events: none;
+}
+
+.column-filter-selected-text {
+  display: inline-block;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
 /* Target type toggle icons styling */
 .target-type-toggle .material-icons {
   vertical-align: middle;
