@@ -712,10 +712,10 @@ table {
   align-items: center;
   gap: 4px;
   padding: 4px 10px;
-  border: 1px solid var(--border-color, #ddd);
+  border: 1px solid var(--border-color);
   border-radius: 16px;
-  background: var(--card-bg, #fff);
-  color: var(--text-primary, #333);
+  background: var(--bg-color);
+  color: var(--text-color);
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
@@ -726,12 +726,12 @@ table {
 }
 
 .column-filter-btn:hover {
-  border-color: var(--accent-color, #26a69a);
+  border-color: var(--accent-color);
 }
 
 .column-filter-btn.active {
-  border-color: var(--accent-color, #26a69a);
-  background-color: var(--accent-color, #26a69a);
+  border-color: var(--accent-color);
+  background-color: var(--accent-color);
   color: #fff;
 }
 
@@ -748,10 +748,10 @@ table {
   min-width: 140px;
   max-height: 200px;
   overflow-y: auto;
-  background: var(--card-bg, #fff);
-  border: 1px solid var(--border-color, #ddd);
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--box-shadow-md);
   margin-top: 4px;
   padding: 4px 0;
 }
@@ -768,12 +768,12 @@ table {
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
-  color: var(--text-primary, #333);
+  color: var(--text-color);
   transition: background-color 0.15s;
 }
 
 .column-filter-option:hover {
-  background-color: var(--table-hover, #f5f5f5);
+  background-color: var(--table-hover);
 }
 
 .column-filter-option input[type="checkbox"] {

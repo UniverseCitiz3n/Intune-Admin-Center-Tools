@@ -93,29 +93,30 @@ document.addEventListener("DOMContentLoaded", () => {
       case 'compliance':
       case 'pwsh':
         return [
-          { key: 'membershipType', label: 'Membership Type', getValue: item => (item.targets && item.targets[0]) ? item.targets[0].membershipType : '' },
-          { key: 'targetType', label: 'Target Type', getValue: item => (item.targets && item.targets[0]) ? item.targets[0].targetType : '' }
+          { key: 'membershipType', label: 'Membership Type', getValues: item => (item.targets || []).map(t => t.membershipType || '').filter(v => v) },
+          { key: 'targetType', label: 'Target Type', getValues: item => (item.targets || []).map(t => t.targetType || '').filter(v => v) }
         ];
       case 'groupMembers':
         return [
-          { key: 'objectType', label: 'Object Type', getValue: item => {
+          { key: 'objectType', label: 'Object Type', getValues: item => {
             const t = item['@odata.type'] || '';
-            if (t.includes('user')) return 'User';
-            if (t.includes('device')) return 'Device';
-            if (t.includes('group')) return 'Group';
-            return t.replace('#microsoft.graph.', '') || 'Unknown';
+            if (t.includes('user')) return ['User'];
+            if (t.includes('device')) return ['Device'];
+            if (t.includes('group')) return ['Group'];
+            const label = t.replace('#microsoft.graph.', '') || 'Unknown';
+            return [label];
           }}
         ];
       case 'groupAssignments':
         return [
-          { key: 'configType', label: 'Config Type', getValue: item => item.configType || '' },
-          { key: 'intent', label: 'Intent', getValue: item => item.intent || '' }
+          { key: 'configType', label: 'Config Type', getValues: item => [item.configType || ''].filter(v => v) },
+          { key: 'intent', label: 'Intent', getValues: item => [item.intent || ''].filter(v => v) }
         ];
       case 'intuneDevices':
         return [
-          { key: 'ownership', label: 'Ownership', getValue: item => item.ownership || item.ownerType || '' },
-          { key: 'complianceState', label: 'Compliance', getValue: item => item.complianceState || '' },
-          { key: 'platform', label: 'Platform', getValue: item => item.platform || normalizePlatform(item.operatingSystem, item.deviceType) || item.operatingSystem || '' }
+          { key: 'ownership', label: 'Ownership', getValues: item => [item.ownership || item.ownerType || ''].filter(v => v) },
+          { key: 'complianceState', label: 'Compliance', getValues: item => [item.complianceState || ''].filter(v => v) },
+          { key: 'platform', label: 'Platform', getValues: item => [item.platform || normalizePlatform(item.operatingSystem, item.deviceType) || item.operatingSystem || ''].filter(v => v) }
         ];
       default:
         return [];
@@ -139,8 +140,8 @@ document.addEventListener("DOMContentLoaded", () => {
     columns.forEach(col => {
       const values = new Set();
       data.forEach(item => {
-        const val = col.getValue(item);
-        if (val) values.add(val);
+        const vals = col.getValues(item);
+        vals.forEach(v => { if (v) values.add(v); });
       });
       if (values.size > 0) {
         columnValues[col.key] = { label: col.label, values: [...values].sort() };
@@ -296,7 +297,10 @@ document.addEventListener("DOMContentLoaded", () => {
       for (const col of columns) {
         const selectedValues = state.columnFilters[col.key];
         if (selectedValues && selectedValues.size > 0) {
-          results = results.filter(item => selectedValues.has(col.getValue(item)));
+          results = results.filter(item => {
+            const vals = col.getValues(item);
+            return vals.some(v => selectedValues.has(v));
+          });
         }
       }
 
