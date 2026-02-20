@@ -699,7 +699,7 @@ table {
   gap: 6px;
   margin-bottom: 8px;
   max-width: 100%;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .column-filter-dropdown {
@@ -714,7 +714,7 @@ table {
   padding: 4px 10px;
   border: 1px solid var(--border-color);
   border-radius: 16px;
-  background: var(--bg-color);
+  background: var(--btn-modern-bg);
   color: var(--text-color);
   font-size: 12px;
   cursor: pointer;
@@ -726,13 +726,13 @@ table {
 }
 
 .column-filter-btn:hover {
+  background-color: var(--btn-modern-hover-bg);
   border-color: var(--accent-color);
 }
 
 .column-filter-btn.active {
   border-color: var(--accent-color);
-  background-color: var(--accent-color);
-  color: #fff;
+  color: var(--accent-color);
 }
 
 .column-filter-btn .material-icons {
