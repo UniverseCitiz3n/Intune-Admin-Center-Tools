@@ -169,12 +169,6 @@ const Analytics = (() => {
 
   // Disable analytics
   const disable = async () => {
-    // Beta releases cannot disable analytics
-    if (RELEASE_TYPE === 'beta') {
-      console.log('[Analytics] Cannot disable analytics in beta releases');
-      return false;
-    }
-    
     // Send event before disabling
     if (analyticsEnabled && clientId) {
       await sendEvent('analytics_disabled');
