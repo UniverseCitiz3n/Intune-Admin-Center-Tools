@@ -4949,8 +4949,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
     createDeviceGroupState.cancellationRequested = false;
 
-    // Show history if there are previous runs
-    renderCreateDeviceGroupHistory();
+    // Load history from storage then render
+    chrome.storage.local.get(['createDeviceGroupHistory'], (data) => {
+      if (data.createDeviceGroupHistory && Array.isArray(data.createDeviceGroupHistory)) {
+        createDeviceGroupHistory.length = 0;
+        data.createDeviceGroupHistory.forEach(e => createDeviceGroupHistory.push(e));
+      }
+      renderCreateDeviceGroupHistory();
+    });
   };
 
   // Hide the create device group modal
@@ -5280,6 +5286,8 @@ document.addEventListener("DOMContentLoaded", () => {
       devicesDiscovered: devices.length,
       devicesAdded: addResults.added,
       devicesFailed: addResults.failed,
+      addedDevices: addResults.addedDevices,
+      notFound: addResults.notFound,
       failures: addResults.failures
     });
   };
@@ -5290,7 +5298,9 @@ document.addEventListener("DOMContentLoaded", () => {
       total: devices.length,
       added: 0,
       failed: 0,
-      failures: []
+      addedDevices: [],  // device names successfully added
+      notFound: [],      // {deviceName, reason} - not resolvable in Entra ID
+      failures: []       // {deviceName, reason} - add-operation errors
     };
 
     // First, get the Entra device IDs for the Intune devices
@@ -5321,22 +5331,19 @@ document.addEventListener("DOMContentLoaded", () => {
               azureADDeviceId: device.azureADDeviceId
             });
           } else {
-            results.failed++;
-            results.failures.push({
+            results.notFound.push({
               deviceName: device.deviceName || 'Unknown',
               reason: 'Device not found in Entra ID'
             });
           }
         } catch (error) {
-          results.failed++;
-          results.failures.push({
+          results.notFound.push({
             deviceName: device.deviceName || 'Unknown',
             reason: error.message
           });
         }
       } else {
-        results.failed++;
-        results.failures.push({
+        results.notFound.push({
           deviceName: device.deviceName || 'Unknown',
           reason: 'No Azure AD Device ID available'
         });
@@ -5383,6 +5390,7 @@ document.addEventListener("DOMContentLoaded", () => {
             
             if (response.status === 204 || response.status === 200 || response.status === 201) {
               results.added++;
+              results.addedDevices.push(device.displayName);
             } else {
               results.failed++;
               results.failures.push({
@@ -5406,6 +5414,7 @@ document.addEventListener("DOMContentLoaded", () => {
               })
             });
             results.added++;
+            results.addedDevices.push(device.displayName);
           } catch (e) {
             results.failed++;
             results.failures.push({
@@ -5426,11 +5435,14 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById('createDeviceGroupProgressSection').style.display = 'none';
     document.getElementById('createDeviceGroupResultsSection').style.display = 'block';
 
+    const notFoundCount = (results.notFound || []).length;
     let summaryMsg = `✓ New group created: ${results.groupName}\n`;
     summaryMsg += `\nUsers processed: ${results.usersProcessed}`;
     summaryMsg += `\nDevices discovered: ${results.devicesDiscovered}`;
     summaryMsg += `\nDevices added successfully: ${results.devicesAdded}`;
-    
+    if (notFoundCount > 0) {
+      summaryMsg += `\nNot found: ${notFoundCount}`;
+    }
     if (results.devicesFailed > 0) {
       summaryMsg += `\nFailures: ${results.devicesFailed}`;
     }
@@ -5440,41 +5452,55 @@ document.addEventListener("DOMContentLoaded", () => {
     const detailsDiv = document.getElementById('createDeviceGroupResultsDetails');
     detailsDiv.innerHTML = '';
 
-    if (results.failures && results.failures.length > 0) {
-      const failureTitle = document.createElement('p');
-      failureTitle.style.fontWeight = 'bold';
-      failureTitle.style.marginTop = '16px';
-      failureTitle.textContent = 'Failed devices:';
-      detailsDiv.appendChild(failureTitle);
+    // Helper to append a titled list of items
+    const appendItemList = (title, items, renderItem) => {
+      const heading = document.createElement('p');
+      heading.style.fontWeight = 'bold';
+      heading.style.marginTop = '16px';
+      heading.textContent = title;
+      detailsDiv.appendChild(heading);
+      const toShow = items.slice(0, MAX_FAILURES_TO_DISPLAY);
+      toShow.forEach(item => detailsDiv.appendChild(renderItem(item)));
+      if (items.length > MAX_FAILURES_TO_DISPLAY) {
+        const more = document.createElement('p');
+        more.textContent = `... and ${items.length - MAX_FAILURES_TO_DISPLAY} more.`;
+        more.style.fontStyle = 'italic';
+        detailsDiv.appendChild(more);
+      }
+    };
 
-      // Show first 10 failures
-      const failuresToShow = results.failures.slice(0, MAX_FAILURES_TO_DISPLAY);
-      failuresToShow.forEach(failure => {
+    if (results.notFound && results.notFound.length > 0) {
+      appendItemList('Not found in Entra ID:', results.notFound, (item) => {
+        const el = document.createElement('div');
+        el.className = 'failure-item';
+        const nameStrong = document.createElement('strong');
+        nameStrong.textContent = item.deviceName;
+        el.appendChild(nameStrong);
+        el.appendChild(document.createElement('br'));
+        const reasonSmall = document.createElement('small');
+        reasonSmall.textContent = `Reason: ${item.reason}`;
+        el.appendChild(reasonSmall);
+        return el;
+      });
+    }
+
+    if (results.failures && results.failures.length > 0) {
+      appendItemList('Failed to add:', results.failures, (failure) => {
         const failureItem = document.createElement('div');
         failureItem.className = 'failure-item';
-
         const nameStrong = document.createElement('strong');
         nameStrong.textContent = failure.deviceName;
         failureItem.appendChild(nameStrong);
         failureItem.appendChild(document.createElement('br'));
-
         const reasonSmall = document.createElement('small');
         reasonSmall.textContent = `Reason: ${failure.reason}`;
         failureItem.appendChild(reasonSmall);
-
-        detailsDiv.appendChild(failureItem);
+        return failureItem;
       });
-
-      if (results.failures.length > MAX_FAILURES_TO_DISPLAY) {
-        const moreMsg = document.createElement('p');
-        moreMsg.textContent = `... and ${results.failures.length - MAX_FAILURES_TO_DISPLAY} more failures.`;
-        moreMsg.style.fontStyle = 'italic';
-        detailsDiv.appendChild(moreMsg);
-      }
     }
 
-    // Record to history
-    createDeviceGroupHistory.push({
+    // Record to history and persist
+    const entry = {
       timestamp: new Date().toLocaleString(),
       groupName: results.groupName,
       baseGroupName: createDeviceGroupState.baseGroupName || '',
@@ -5482,8 +5508,16 @@ document.addEventListener("DOMContentLoaded", () => {
       devicesDiscovered: results.devicesDiscovered,
       devicesAdded: results.devicesAdded,
       devicesFailed: results.devicesFailed,
+      addedDevices: results.addedDevices || [],
+      notFound: results.notFound || [],
       failures: results.failures || []
-    });
+    };
+    createDeviceGroupHistory.push(entry);
+    // Cap at 10 entries (oldest removed first)
+    if (createDeviceGroupHistory.length > 10) {
+      createDeviceGroupHistory.splice(0, createDeviceGroupHistory.length - 10);
+    }
+    chrome.storage.local.set({ createDeviceGroupHistory: createDeviceGroupHistory });
     renderCreateDeviceGroupHistory();
   };
 
@@ -5509,15 +5543,35 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     list.innerHTML = createDeviceGroupHistory.slice().reverse().map(entry => {
-      const failureLines = entry.failures.length > 0
-        ? entry.failures.map(f =>
-            `<div class="history-failure-item"><strong>${escapeHtml(f.deviceName)}</strong> — ${escapeHtml(f.reason)}</div>`
-          ).join('')
-        : '';
       const usersProcessed = escapeHtml(String(entry.usersProcessed));
       const devicesDiscovered = escapeHtml(String(entry.devicesDiscovered));
       const devicesAdded = escapeHtml(String(entry.devicesAdded));
+      const notFoundCount = escapeHtml(String((entry.notFound || []).length));
       const devicesFailed = escapeHtml(String(entry.devicesFailed));
+
+      const renderReasonLines = (items) =>
+        items.map(f =>
+          `<div class="history-detail-item"><strong>${escapeHtml(f.deviceName)}</strong> — ${escapeHtml(f.reason)}</div>`
+        ).join('');
+
+      const addedSection = (entry.addedDevices || []).length > 0
+        ? `<details class="history-sub-details">
+            <summary class="history-sub-summary">Added (${escapeHtml(String(entry.addedDevices.length))})</summary>
+            <div class="history-detail-list">${entry.addedDevices.map(name => `<div class="history-detail-item">${escapeHtml(String(name))}</div>`).join('')}</div>
+          </details>` : '';
+
+      const notFoundSection = (entry.notFound || []).length > 0
+        ? `<details class="history-sub-details">
+            <summary class="history-sub-summary">Not found (${notFoundCount})</summary>
+            <div class="history-detail-list">${renderReasonLines(entry.notFound)}</div>
+          </details>` : '';
+
+      const failuresSection = (entry.failures || []).length > 0
+        ? `<details class="history-sub-details">
+            <summary class="history-sub-summary">Failures (${devicesFailed})</summary>
+            <div class="history-detail-list">${renderReasonLines(entry.failures)}</div>
+          </details>` : '';
+
       return `<div class="history-entry">
         <div class="history-entry-header">
           <span class="history-timestamp">${escapeHtml(entry.timestamp)}</span>
@@ -5525,9 +5579,8 @@ document.addEventListener("DOMContentLoaded", () => {
         </div>
         <div class="history-entry-body">
           <span>Base group: ${escapeHtml(entry.baseGroupName)}</span><br>
-          <span>Users processed: ${usersProcessed} | Devices discovered: ${devicesDiscovered}</span><br>
-          <span>Added: ${devicesAdded}${entry.devicesFailed > 0 ? ` | Not added: ${devicesFailed}` : ''}</span>
-          ${failureLines ? `<div class="history-failures">${failureLines}</div>` : ''}
+          <span>Users: ${usersProcessed} | Discovered: ${devicesDiscovered} | Added: ${devicesAdded}${(entry.notFound || []).length > 0 ? ` | Not found: ${notFoundCount}` : ''}${entry.devicesFailed > 0 ? ` | Failures: ${devicesFailed}` : ''}</span>
+          ${addedSection}${notFoundSection}${failuresSection}
         </div>
       </div>`;
     }).join('');

@@ -1889,6 +1889,49 @@ input[type="checkbox"]:disabled + span {
   opacity: 0.85;
 }
 
+.history-sub-details {
+  margin-top: 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  padding: 4px 8px;
+  background-color: var(--bg-color);
+}
+
+.history-sub-details[open] {
+  padding-bottom: 6px;
+}
+
+.history-sub-summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--accent-color);
+  user-select: none;
+  list-style: none;
+  padding: 2px 0;
+}
+
+.history-sub-summary:hover {
+  opacity: 0.8;
+}
+
+.history-detail-list {
+  margin-top: 4px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.history-detail-item {
+  padding: 2px 0;
+  font-size: 0.80rem;
+  color: var(--text-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.history-detail-item:last-child {
+  border-bottom: none;
+}
+
 /* ================================================== */
 /* Collect Logs Modal Styles                          */
 /* ================================================== */
