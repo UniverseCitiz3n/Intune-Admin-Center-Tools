@@ -16,7 +16,8 @@ document.addEventListener("DOMContentLoaded", () => {
       totalPages: 0,
       filteredData: [],
       selectedRowIds: new Set() // Track selected rows across pages by unique identifier
-    }
+    },
+    columnFilters: {} // Track active column filter selections: { columnKey: Set([val1, val2]) }
   };
 
   // ── Theme Management Functions ───────────────────────────────────────
@@ -83,73 +84,242 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ── Utility Functions ───────────────────────────────────────────────
   // filterTable: Filter the table based on input text
-  const filterTable = (filterText) => {
-    filterText = filterText.toLowerCase();
-    if (state.currentDisplayType === 'config') {
-      chrome.storage.local.get(['lastConfigAssignments'], (data) => {
-        if (data.lastConfigAssignments) {
-          const filteredResults = [...data.lastConfigAssignments].filter(item =>
-            item.policyName.toLowerCase().includes(filterText)
-          );
+  // ── Column Filter Definitions ──────────────────────────────────────
+  // Maps display types to their filterable columns (excluding name/search column)
+  const getFilterableColumns = (displayType) => {
+    switch (displayType) {
+      case 'config':
+      case 'apps':
+      case 'compliance':
+      case 'pwsh':
+        return [
+          { key: 'membershipType', label: 'Membership Type', getValues: item => (item.targets || []).map(t => t.membershipType || '').filter(v => v) },
+          { key: 'targetType', label: 'Target Type', getValues: item => (item.targets || []).map(t => t.targetType || '').filter(v => v) }
+        ];
+      case 'groupMembers':
+        return [
+          { key: 'objectType', label: 'Object Type', getValues: item => {
+            const t = item['@odata.type'] || '';
+            if (t.includes('user')) return ['User'];
+            if (t.includes('device')) return ['Device'];
+            if (t.includes('group')) return ['Group'];
+            const label = t.replace('#microsoft.graph.', '') || 'Unknown';
+            return [label];
+          }}
+        ];
+      case 'groupAssignments':
+        return [
+          { key: 'configType', label: 'Config Type', getValues: item => [item.configType || ''].filter(v => v) },
+          { key: 'intent', label: 'Intent', getValues: item => [item.intent || ''].filter(v => v) }
+        ];
+      case 'intuneDevices':
+        return [
+          { key: 'ownership', label: 'Ownership', getValues: item => [item.ownership || item.ownerType || ''].filter(v => v) },
+          { key: 'complianceState', label: 'Compliance', getValues: item => [item.complianceState || ''].filter(v => v) },
+          { key: 'platform', label: 'Platform', getValues: item => [item.platform || normalizePlatform(item.operatingSystem, item.deviceType) || item.operatingSystem || ''].filter(v => v) }
+        ];
+      default:
+        return [];
+    }
+  };
 
-          updateConfigTable(filteredResults, false); // Pass false to avoid changing currentDisplayType
+  // Build column filter UI from data
+  const escapeHtml = (str) => {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  };
+
+  const buildColumnFilters = (data) => {
+    const container = document.getElementById('columnFiltersContainer');
+    if (!container) return;
+
+    const columns = getFilterableColumns(state.currentDisplayType);
+    if (columns.length === 0 || !data || data.length === 0) {
+      container.style.display = 'none';
+      container.innerHTML = '';
+      return;
+    }
+
+    // Collect unique values for each filterable column
+    const columnValues = {};
+    columns.forEach(col => {
+      const values = new Set();
+      data.forEach(item => {
+        const vals = col.getValues(item);
+        vals.forEach(v => { if (v) values.add(v); });
+      });
+      if (values.size > 0) {
+        columnValues[col.key] = { label: col.label, values: [...values].sort() };
+      }
+    });
+
+    if (Object.keys(columnValues).length === 0) {
+      container.style.display = 'none';
+      container.innerHTML = '';
+      return;
+    }
+
+    // Build HTML
+    let html = '';
+    for (const [key, info] of Object.entries(columnValues)) {
+      const selectedVals = state.columnFilters[key];
+      const hasSelection = selectedVals && selectedVals.size > 0 && selectedVals.size < info.values.length;
+      const activeClass = hasSelection ? ' active' : '';
+      let btnLabel = info.label;
+      if (hasSelection) {
+        btnLabel = [...selectedVals].join(', ');
+      }
+
+      html += `<div class="column-filter-dropdown" data-filter-key="${escapeHtml(key)}">
+        <button class="column-filter-btn${activeClass}" data-filter-key="${escapeHtml(key)}">
+          <span class="column-filter-selected-text">${escapeHtml(btnLabel)}</span>
+          <i class="material-icons">arrow_drop_down</i>
+        </button>
+        <div class="column-filter-menu" data-filter-key="${escapeHtml(key)}">`;
+      
+      info.values.forEach(val => {
+        const checked = !hasSelection || (selectedVals && selectedVals.has(val)) ? 'checked' : '';
+        html += `<label class="column-filter-option">
+          <input type="checkbox" value="${escapeHtml(val)}" data-filter-key="${escapeHtml(key)}" ${checked}>
+          <span>${escapeHtml(val)}</span>
+        </label>`;
+      });
+
+      html += `</div></div>`;
+    }
+
+    container.innerHTML = html;
+    container.style.display = 'flex';
+
+    // Attach event listeners for dropdown toggle
+    container.querySelectorAll('.column-filter-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const filterKey = btn.dataset.filterKey;
+        const menu = container.querySelector(`.column-filter-menu[data-filter-key="${filterKey}"]`);
+        // Close all other menus
+        container.querySelectorAll('.column-filter-menu.open').forEach(m => {
+          if (m !== menu) m.classList.remove('open');
+        });
+        menu.classList.toggle('open');
+      });
+    });
+
+    // Attach event listeners for checkbox changes
+    container.querySelectorAll('.column-filter-option input[type="checkbox"]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const filterKey = cb.dataset.filterKey;
+        const menu = cb.closest('.column-filter-menu');
+        const allCheckboxes = menu.querySelectorAll('input[type="checkbox"]');
+        const checkedValues = new Set();
+        allCheckboxes.forEach(c => { if (c.checked) checkedValues.add(c.value); });
+
+        // If all checked or none checked, clear filter (show all results)
+        if (checkedValues.size === allCheckboxes.length || checkedValues.size === 0) {
+          delete state.columnFilters[filterKey];
+        } else {
+          state.columnFilters[filterKey] = checkedValues;
+        }
+
+        applyAllFilters();
+
+        // Update button appearance
+        const btn = container.querySelector(`.column-filter-btn[data-filter-key="${filterKey}"]`);
+        const colInfo = columnValues[filterKey];
+        if (state.columnFilters[filterKey] && state.columnFilters[filterKey].size < colInfo.values.length) {
+          btn.classList.add('active');
+          btn.querySelector('.column-filter-selected-text').textContent = [...state.columnFilters[filterKey]].join(', ');
+        } else {
+          btn.classList.remove('active');
+          btn.querySelector('.column-filter-selected-text').textContent = colInfo.label;
         }
       });
-    } else if (state.currentDisplayType === 'apps') {
-      chrome.storage.local.get(['lastAppAssignments'], (data) => {
-        if (data.lastAppAssignments) {
-          const filteredResults = [...data.lastAppAssignments].filter(item =>
-            item.appName.toLowerCase().includes(filterText)
-          );
+    });
+  };
 
-          updateAppTable(filteredResults, false); // Pass false to avoid changing currentDisplayType
-        }
-      });
-    } else if (state.currentDisplayType === 'compliance') {
-      chrome.storage.local.get(['lastComplianceAssignments'], (data) => {
-        if (data.lastComplianceAssignments) {
-          const filteredResults = [...data.lastComplianceAssignments].filter(item =>
-            item.policyName.toLowerCase().includes(filterText)
-          );
+  // Clear all column filters and hide the UI
+  const clearColumnFilters = () => {
+    state.columnFilters = {};
+    const container = document.getElementById('columnFiltersContainer');
+    if (container) {
+      container.style.display = 'none';
+      container.innerHTML = '';
+    }
+  };
 
-          updateComplianceTable(filteredResults, false); // Pass false to avoid changing currentDisplayType
-        }
-      });
-    } else if (state.currentDisplayType === 'pwsh') {
-      chrome.storage.local.get(['lastPwshAssignments'], (data) => {
-        if (data.lastPwshAssignments) {
-          const filteredResults = [...data.lastPwshAssignments].filter(item =>
-            item.scriptName.toLowerCase().includes(filterText)
-          );
+  // Apply column filters together with text filter by reloading from storage
+  const applyAllFilters = () => {
+    const filterText = document.getElementById('profileFilterInput').value.toLowerCase();
+    const storageKeyMap = {
+      'config': 'lastConfigAssignments',
+      'apps': 'lastAppAssignments',
+      'compliance': 'lastComplianceAssignments',
+      'pwsh': 'lastPwshAssignments',
+      'groupMembers': 'lastGroupMembers',
+      'groupAssignments': 'lastGroupAssignments',
+      'intuneDevices': 'lastIntuneDevices'
+    };
+    const storageKey = storageKeyMap[state.currentDisplayType];
+    if (!storageKey) return;
 
-          updatePwshTable(filteredResults, false); // Pass false to avoid changing currentDisplayType
-        }
-      });
-    } else if (state.currentDisplayType === 'groupMembers') {
-      chrome.storage.local.get(['lastGroupMembers'], (data) => {
-        if (data.lastGroupMembers) {
-          const filteredResults = [...data.lastGroupMembers].filter(item => {
+    chrome.storage.local.get([storageKey], (data) => {
+      if (!data[storageKey]) return;
+      let results = [...data[storageKey]];
+
+      // Apply text filter
+      if (filterText) {
+        results = results.filter(item => {
+          if (state.currentDisplayType === 'config' || state.currentDisplayType === 'compliance') {
+            return item.policyName.toLowerCase().includes(filterText);
+          } else if (state.currentDisplayType === 'apps') {
+            return item.appName.toLowerCase().includes(filterText);
+          } else if (state.currentDisplayType === 'pwsh') {
+            return item.scriptName.toLowerCase().includes(filterText);
+          } else if (state.currentDisplayType === 'groupMembers') {
             const name = (item.displayName || '').toLowerCase();
             const upn = (item.userPrincipalName || '').toLowerCase();
             const deviceId = (item.deviceId || '').toLowerCase();
             return name.includes(filterText) || upn.includes(filterText) || deviceId.includes(filterText);
+          } else if (state.currentDisplayType === 'groupAssignments') {
+            return item.configName.toLowerCase().includes(filterText) ||
+              item.configType.toLowerCase().includes(filterText);
+          } else if (state.currentDisplayType === 'intuneDevices') {
+            return (item.deviceName || '').toLowerCase().includes(filterText);
+          }
+          return true;
+        });
+      }
+
+      // Apply column filters
+      const columns = getFilterableColumns(state.currentDisplayType);
+      for (const col of columns) {
+        const selectedValues = state.columnFilters[col.key];
+        if (selectedValues && selectedValues.size > 0) {
+          results = results.filter(item => {
+            const vals = col.getValues(item);
+            return vals.some(v => selectedValues.has(v));
           });
-
-          updateGroupMembersTable(filteredResults, false);
         }
-      });
-    } else if (state.currentDisplayType === 'groupAssignments') {
-      chrome.storage.local.get(['lastGroupAssignments'], (data) => {
-        if (data.lastGroupAssignments) {
-          const filteredResults = [...data.lastGroupAssignments].filter(item =>
-            item.configName.toLowerCase().includes(filterText) ||
-            item.configType.toLowerCase().includes(filterText)
-          );
+      }
 
-          updateGroupAssignmentsTable(filteredResults, false);
-        }
-      });
-    }
+      // Update the table without changing display type
+      const updateFuncMap = {
+        'config': updateConfigTable,
+        'apps': updateAppTable,
+        'compliance': updateComplianceTable,
+        'pwsh': updatePwshTable,
+        'groupMembers': updateGroupMembersTable,
+        'groupAssignments': updateGroupAssignmentsTable,
+        'intuneDevices': updateIntuneDevicesTable
+      };
+      const updateFunc = updateFuncMap[state.currentDisplayType];
+      if (updateFunc) updateFunc(results, false);
+    });
+  };
+
+  const filterTable = (filterText) => {
+    applyAllFilters();
   };
 
   // ── Pagination Functions ────────────────────────────────────────────
@@ -174,6 +344,9 @@ document.addEventListener("DOMContentLoaded", () => {
         } else if (state.currentDisplayType === 'groupAssignments') {
           return item.configName.toLowerCase().includes(searchText) ||
             item.configType.toLowerCase().includes(searchText);
+        } else if (state.currentDisplayType === 'intuneDevices') {
+          const deviceName = (item.deviceName || '').toLowerCase();
+          return deviceName.includes(searchText);
         }
         return true;
       }) : data;
@@ -1282,6 +1455,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (updateDisplay) {
       state.currentDisplayType = 'config';
       chrome.storage.local.set({ currentDisplayType: state.currentDisplayType });
+      buildColumnFilters(assignments);
     }
     state.pagination.itemsPerPage = 10;
     updateTableHeaders('config');
@@ -1318,6 +1492,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (updateDisplay) {
       state.currentDisplayType = 'groupMembers';
       chrome.storage.local.set({ currentDisplayType: state.currentDisplayType });
+      buildColumnFilters(members);
     }
     state.pagination.itemsPerPage = 10;
     updateTableHeaders('groupMembers');
@@ -1348,6 +1523,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (updateDisplay) {
       state.currentDisplayType = 'groupAssignments';
       chrome.storage.local.set({ currentDisplayType: state.currentDisplayType });
+      buildColumnFilters(assignments);
     }
     state.pagination.itemsPerPage = 10;
     updateTableHeaders('groupAssignments');
@@ -1370,6 +1546,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (updateDisplay) {
       state.currentDisplayType = 'apps';
       chrome.storage.local.set({ currentDisplayType: state.currentDisplayType });
+      buildColumnFilters(assignments);
     }
     state.pagination.itemsPerPage = 10;
     updateTableHeaders('apps');
@@ -1409,6 +1586,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (updateDisplay) {
       state.currentDisplayType = 'compliance';
       chrome.storage.local.set({ currentDisplayType: state.currentDisplayType });
+      buildColumnFilters(assignments);
     }
     state.pagination.itemsPerPage = 10;
     updateTableHeaders('compliance');
@@ -1446,6 +1624,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (updateDisplay) {
       state.currentDisplayType = 'pwsh';
       chrome.storage.local.set({ currentDisplayType: state.currentDisplayType });
+      buildColumnFilters(assignments);
     }
     state.pagination.itemsPerPage = 10;
     updateTableHeaders('pwsh');
@@ -1528,15 +1707,19 @@ document.addEventListener("DOMContentLoaded", () => {
           clearTableAndPagination();
           if (state.currentDisplayType === 'compliance' && data.lastComplianceAssignments) {
             chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastPwshAssignments']);
+            buildColumnFilters(data.lastComplianceAssignments);
             updateComplianceTable(data.lastComplianceAssignments, false);
           } else if (state.currentDisplayType === 'apps' && data.lastAppAssignments) {
             chrome.storage.local.remove(['lastConfigAssignments', 'lastComplianceAssignments', 'lastPwshAssignments']);
+            buildColumnFilters(data.lastAppAssignments);
             updateAppTable(data.lastAppAssignments, false);
           } else if (state.currentDisplayType === 'config' && data.lastConfigAssignments) {
             chrome.storage.local.remove(['lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments']);
+            buildColumnFilters(data.lastConfigAssignments);
             updateConfigTable(data.lastConfigAssignments, false);
           } else if (state.currentDisplayType === 'pwsh' && data.lastPwshAssignments) {
             chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastComplianceAssignments', 'lastGroupMembers', 'lastCheckedGroup']);
+            buildColumnFilters(data.lastPwshAssignments);
             updatePwshTable(data.lastPwshAssignments, false);
           } else if (state.currentDisplayType === 'groupMembers' && data.lastGroupMembers) {
             chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments']);
@@ -1570,9 +1753,11 @@ document.addEventListener("DOMContentLoaded", () => {
               }
             }
             
+            buildColumnFilters(data.lastGroupMembers);
             updateGroupMembersTable(data.lastGroupMembers, false);
           } else if (state.currentDisplayType === 'groupAssignments' && data.lastGroupAssignments) {
             chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments', 'lastGroupMembers', 'lastCheckedGroup']);
+            buildColumnFilters(data.lastGroupAssignments);
             updateGroupAssignmentsTable(data.lastGroupAssignments, false);
           } else if (state.currentDisplayType === 'intuneDevices' && data.lastIntuneDevices) {
             chrome.storage.local.remove(['lastConfigAssignments', 'lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments', 'lastGroupMembers', 'lastCheckedGroup']);
@@ -1599,6 +1784,7 @@ document.addEventListener("DOMContentLoaded", () => {
               }
             }
             
+            buildColumnFilters(data.lastIntuneDevices);
             updateIntuneDevicesTable(data.lastIntuneDevices, false);
           }
         } else {
@@ -2192,6 +2378,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     document.getElementById('profileFilterInput').value = '';
     chrome.storage.local.set({ profileFilterValue: '' });
+    clearColumnFilters();
 
     clearTableSelection();
 
@@ -3341,6 +3528,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     document.getElementById('profileFilterInput').value = '';
     chrome.storage.local.set({ profileFilterValue: '' });
+    clearColumnFilters();
 
     clearTableSelection();
 
@@ -3773,6 +3961,7 @@ document.addEventListener("DOMContentLoaded", () => {
     showProcessingNotification('Fetching configuration assignments...');
     document.getElementById('profileFilterInput').value = '';
     chrome.storage.local.set({ profileFilterValue: '' });
+    clearColumnFilters();
 
     chrome.storage.local.remove(['lastAppAssignments', 'lastComplianceAssignments', 'lastPwshAssignments', 'lastGroupMembers', 'lastCheckedGroup']);
 
@@ -3937,6 +4126,7 @@ document.addEventListener("DOMContentLoaded", () => {
     showProcessingNotification('Fetching compliance policies...');
     document.getElementById('profileFilterInput').value = '';
     chrome.storage.local.set({ profileFilterValue: '' });
+    clearColumnFilters();
 
     chrome.storage.local.remove(['lastConfigAssignments','lastAppAssignments','lastPwshAssignments','lastGroupMembers','lastCheckedGroup']);
 
@@ -4337,6 +4527,7 @@ document.addEventListener("DOMContentLoaded", () => {
     showProcessingNotification('Fetching app assignments...');
     document.getElementById('profileFilterInput').value = '';
     chrome.storage.local.set({ profileFilterValue: '' });
+    clearColumnFilters();
 
     chrome.storage.local.remove(['lastConfigAssignments','lastComplianceAssignments','lastPwshAssignments','lastGroupMembers','lastCheckedGroup']);
 
@@ -4523,6 +4714,7 @@ document.addEventListener("DOMContentLoaded", () => {
     showProcessingNotification('Fetching PowerShell profiles...');
     document.getElementById('profileFilterInput').value = '';
     chrome.storage.local.set({ profileFilterValue: '' });
+    clearColumnFilters();
 
     chrome.storage.local.remove(['lastConfigAssignments','lastAppAssignments','lastComplianceAssignments','lastGroupMembers','lastCheckedGroup']);
 
@@ -5337,6 +5529,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     document.getElementById('profileFilterInput').value = '';
     chrome.storage.local.set({ profileFilterValue: '' });
+    clearColumnFilters();
 
     clearTableSelection();
 
@@ -5503,6 +5696,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (updateDisplay) {
       state.currentDisplayType = 'intuneDevices';
       chrome.storage.local.set({ currentDisplayType: state.currentDisplayType });
+      buildColumnFilters(devices);
     }
     state.pagination.itemsPerPage = 10;
     updateTableHeaders('intuneDevices');
@@ -5851,6 +6045,16 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  // Close column filter menus when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.column-filter-dropdown')) {
+      const container = document.getElementById('columnFiltersContainer');
+      if (container) {
+        container.querySelectorAll('.column-filter-menu.open').forEach(m => m.classList.remove('open'));
+      }
+    }
+  });
+
   // ── Analytics Tracking (Event Delegation) ─────────────────────────────
   // Automatically tracks clicks on any element with an id attribute.
   // New buttons are tracked by default — no extra code needed.
@@ -6186,6 +6390,7 @@ document.addEventListener("DOMContentLoaded", () => {
           document.getElementById('groupResults').innerHTML = '';
           document.getElementById('groupSearchInput').value = '';
           document.getElementById('profileFilterInput').value = '';
+          clearColumnFilters();
 
           // Reset pagination
           document.getElementById('paginationContainer').style.display = 'none';
@@ -6293,19 +6498,11 @@ document.addEventListener("DOMContentLoaded", () => {
       const toggleText = document.getElementById('analyticsToggleText');
       const analyticsToggle = document.getElementById('analyticsToggleOption');
       
-      if (Analytics.isBeta()) {
-        // Beta release - hide the toggle option entirely
-        if (analyticsToggle) {
-          analyticsToggle.style.display = 'none';
-        }
-      } else {
-        // Prod release - show toggle with current state
-        if (analyticsToggle) {
-          analyticsToggle.style.display = '';
-        }
-        if (toggleText) {
-          toggleText.textContent = Analytics.isEnabled() ? 'Analytics: Enabled' : 'Analytics: Disabled';
-        }
+      if (analyticsToggle) {
+        analyticsToggle.style.display = '';
+      }
+      if (toggleText) {
+        toggleText.textContent = Analytics.isEnabled() ? 'Analytics: Enabled' : 'Analytics: Disabled';
       }
     };
 
@@ -6315,18 +6512,11 @@ document.addEventListener("DOMContentLoaded", () => {
       analyticsToggle.addEventListener('click', async (e) => {
         e.preventDefault();
         
-        // Prevent disabling analytics in beta
-        if (Analytics.isBeta()) {
-          showNotification('Analytics cannot be disabled in beta releases.', 'info');
-          return;
-        }
-        
         if (Analytics.isEnabled()) {
           const disabled = await Analytics.disable();
           if (disabled) {
             showNotification('Analytics disabled. Usage data will no longer be collected.', 'info');
           }
-          // Note: disable() returns false only for beta, which is already handled above
         } else {
           await Analytics.enable();
           showNotification('Analytics enabled. Thank you for helping shape the roadmap!', 'success');
