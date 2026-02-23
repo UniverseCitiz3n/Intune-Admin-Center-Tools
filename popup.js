@@ -5542,17 +5542,27 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    list.innerHTML = createDeviceGroupHistory.slice().reverse().map(entry => {
+    // Group entries by baseGroupName (preserve insertion order of groups, newest entry first)
+    const grouped = new Map(); // baseGroupName → entries[]
+    createDeviceGroupHistory.slice().reverse().forEach(entry => {
+      const key = entry.baseGroupName || '(unknown)';
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(entry);
+    });
+
+    const currentBase = createDeviceGroupState.baseGroupName || '';
+
+    const renderReasonLines = (items) =>
+      items.map(f =>
+        `<div class="history-detail-item"><strong>${escapeHtml(f.deviceName)}</strong> — ${escapeHtml(f.reason)}</div>`
+      ).join('');
+
+    const renderEntry = (entry) => {
       const usersProcessed = escapeHtml(String(entry.usersProcessed));
       const devicesDiscovered = escapeHtml(String(entry.devicesDiscovered));
       const devicesAdded = escapeHtml(String(entry.devicesAdded));
       const notFoundCount = escapeHtml(String((entry.notFound || []).length));
       const devicesFailed = escapeHtml(String(entry.devicesFailed));
-
-      const renderReasonLines = (items) =>
-        items.map(f =>
-          `<div class="history-detail-item"><strong>${escapeHtml(f.deviceName)}</strong> — ${escapeHtml(f.reason)}</div>`
-        ).join('');
 
       const addedSection = (entry.addedDevices || []).length > 0
         ? `<details class="history-sub-details">
@@ -5572,17 +5582,28 @@ document.addEventListener("DOMContentLoaded", () => {
             <div class="history-detail-list">${renderReasonLines(entry.failures)}</div>
           </details>` : '';
 
+      const notFoundPart = (entry.notFound || []).length > 0 ? ` | Not found: ${notFoundCount}` : '';
+      const failuresPart = entry.devicesFailed > 0 ? ` | Failures: ${devicesFailed}` : '';
       return `<div class="history-entry">
         <div class="history-entry-header">
           <span class="history-timestamp">${escapeHtml(entry.timestamp)}</span>
           <span class="history-group-name">${escapeHtml(entry.groupName)}</span>
         </div>
         <div class="history-entry-body">
-          <span>Base group: ${escapeHtml(entry.baseGroupName)}</span><br>
-          <span>Users: ${usersProcessed} | Discovered: ${devicesDiscovered} | Added: ${devicesAdded}${(entry.notFound || []).length > 0 ? ` | Not found: ${notFoundCount}` : ''}${entry.devicesFailed > 0 ? ` | Failures: ${devicesFailed}` : ''}</span>
+          <span>Users: ${usersProcessed} | Discovered: ${devicesDiscovered} | Added: ${devicesAdded}${notFoundPart}${failuresPart}</span>
           ${addedSection}${notFoundSection}${failuresSection}
         </div>
       </div>`;
+    };
+
+    list.innerHTML = Array.from(grouped.entries()).map(([baseGroup, entries]) => {
+      const isCurrentBase = baseGroup === currentBase;
+      const openAttr = isCurrentBase ? ' open' : '';
+      const entriesHtml = entries.map(renderEntry).join('');
+      return `<details class="history-base-group-details"${openAttr}>
+        <summary class="history-base-group-summary">${escapeHtml(baseGroup)} <span class="history-base-group-count">(${entries.length})</span></summary>
+        <div class="history-base-group-entries">${entriesHtml}</div>
+      </details>`;
     }).join('');
 
     section.style.display = 'block';
