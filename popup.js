@@ -5118,6 +5118,7 @@ document.addEventListener("DOMContentLoaded", () => {
       updateProgress(`Finding Intune devices for ${users.length} users...`, 30);
       const allDevices = [];
       const deviceMap = new Map(); // For deduplication by azureADDeviceId
+      const usersNoDevices = []; // Users with no Intune devices matching selected platforms
 
       for (let i = 0; i < users.length; i++) {
         if (createDeviceGroupState.cancellationRequested) {
@@ -5126,7 +5127,19 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         const user = users[i];
+
+        if (!user.userPrincipalName) {
+          usersNoDevices.push({
+            name: user.displayName || 'Unknown user',
+            reason: 'No UPN – cannot look up devices'
+          });
+          const progress = 30 + Math.floor((i + 1) / users.length * 40);
+          updateProgress(`Finding devices... (${i + 1}/${users.length} users processed)`, progress);
+          continue;
+        }
+
         const userDevices = await fetchDevicesByPrimaryUser(user.userPrincipalName, token);
+        let matchedCount = 0;
         
         for (const device of userDevices) {
           const platform = normalizePlatform(device.operatingSystem, device.deviceType);
@@ -5138,8 +5151,18 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!deviceMap.has(deviceKey)) {
               deviceMap.set(deviceKey, device);
               allDevices.push(device);
+              matchedCount++;
             }
           }
+        }
+
+        if (matchedCount === 0) {
+          usersNoDevices.push({
+            name: user.userPrincipalName,
+            reason: userDevices.length === 0
+              ? 'No Intune devices found'
+              : 'No devices match selected platforms'
+          });
         }
 
         // Update progress
@@ -5150,6 +5173,7 @@ document.addEventListener("DOMContentLoaded", () => {
       logMessage(`createDeviceGroup: Discovered ${allDevices.length} unique devices`);
       createDeviceGroupState.discoveredDevices = allDevices;
       createDeviceGroupState.userCount = users.length; // Save user count for results
+      createDeviceGroupState.usersNoDevices = usersNoDevices;
 
       // Step 3: Check if big group confirmation needed
       if (allDevices.length > BIG_GROUP_THRESHOLD) {
@@ -5332,19 +5356,19 @@ document.addEventListener("DOMContentLoaded", () => {
             });
           } else {
             results.notFound.push({
-              deviceName: device.deviceName || 'Unknown',
+              name: device.deviceName || 'Unknown',
               reason: 'Device not found in Entra ID'
             });
           }
         } catch (error) {
           results.notFound.push({
-            deviceName: device.deviceName || 'Unknown',
+            name: device.deviceName || 'Unknown',
             reason: error.message
           });
         }
       } else {
         results.notFound.push({
-          deviceName: device.deviceName || 'Unknown',
+          name: device.deviceName || 'Unknown',
           reason: 'No Azure AD Device ID available'
         });
       }
@@ -5394,7 +5418,7 @@ document.addEventListener("DOMContentLoaded", () => {
             } else {
               results.failed++;
               results.failures.push({
-                deviceName: device.displayName,
+                name: device.displayName,
                 reason: response.body?.error?.message || `HTTP ${response.status}`
               });
             }
@@ -5418,7 +5442,7 @@ document.addEventListener("DOMContentLoaded", () => {
           } catch (e) {
             results.failed++;
             results.failures.push({
-              deviceName: device.displayName,
+              name: device.displayName,
               reason: e.message
             });
           }
@@ -5474,7 +5498,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const el = document.createElement('div');
         el.className = 'failure-item';
         const nameStrong = document.createElement('strong');
-        nameStrong.textContent = item.deviceName;
+        nameStrong.textContent = item.name || item.deviceName;
         el.appendChild(nameStrong);
         el.appendChild(document.createElement('br'));
         const reasonSmall = document.createElement('small');
@@ -5489,7 +5513,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const failureItem = document.createElement('div');
         failureItem.className = 'failure-item';
         const nameStrong = document.createElement('strong');
-        nameStrong.textContent = failure.deviceName;
+        nameStrong.textContent = failure.name || failure.deviceName;
         failureItem.appendChild(nameStrong);
         failureItem.appendChild(document.createElement('br'));
         const reasonSmall = document.createElement('small');
@@ -5501,6 +5525,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Record to history and persist
     const entry = {
+      id: String(Date.now()),
       timestamp: new Date().toLocaleString(),
       groupName: results.groupName,
       baseGroupName: createDeviceGroupState.baseGroupName || '',
@@ -5509,7 +5534,11 @@ document.addEventListener("DOMContentLoaded", () => {
       devicesAdded: results.devicesAdded,
       devicesFailed: results.devicesFailed,
       addedDevices: results.addedDevices || [],
-      notFound: results.notFound || [],
+      // Merge discovery-phase "no devices" with Entra lookup failures into one "not found" list
+      notFound: [
+        ...(createDeviceGroupState.usersNoDevices || []),
+        ...(results.notFound || [])
+      ],
       failures: results.failures || []
     };
     createDeviceGroupHistory.push(entry);
@@ -5552,12 +5581,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const currentBase = createDeviceGroupState.baseGroupName || '';
 
+    const exportBtn = (entryId, category, title) =>
+      `<button class="history-export-btn" data-export-entry-id="${escapeHtml(entryId)}" data-export-category="${escapeHtml(category)}" title="${escapeHtml(title)}"><i class="material-icons">download</i></button>`;
+
     const renderReasonLines = (items) =>
       items.map(f =>
-        `<div class="history-detail-item"><strong>${escapeHtml(f.deviceName)}</strong> — ${escapeHtml(f.reason)}</div>`
+        `<div class="history-detail-item"><strong>${escapeHtml(f.name || f.deviceName || '')}</strong> — ${escapeHtml(f.reason)}</div>`
       ).join('');
 
     const renderEntry = (entry) => {
+      const entryId = entry.id || entry.timestamp;
       const usersProcessed = escapeHtml(String(entry.usersProcessed));
       const devicesDiscovered = escapeHtml(String(entry.devicesDiscovered));
       const devicesAdded = escapeHtml(String(entry.devicesAdded));
@@ -5566,19 +5599,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const addedSection = (entry.addedDevices || []).length > 0
         ? `<details class="history-sub-details">
-            <summary class="history-sub-summary">Added (${escapeHtml(String(entry.addedDevices.length))})</summary>
+            <summary class="history-sub-summary-row">
+              <span class="history-sub-summary">Added (${escapeHtml(String(entry.addedDevices.length))})</span>
+              ${exportBtn(entryId, 'added', 'Export added devices to CSV')}
+            </summary>
             <div class="history-detail-list">${entry.addedDevices.map(name => `<div class="history-detail-item">${escapeHtml(String(name))}</div>`).join('')}</div>
           </details>` : '';
 
       const notFoundSection = (entry.notFound || []).length > 0
         ? `<details class="history-sub-details">
-            <summary class="history-sub-summary">Not found (${notFoundCount})</summary>
+            <summary class="history-sub-summary-row">
+              <span class="history-sub-summary">Not found (${notFoundCount})</span>
+              ${exportBtn(entryId, 'notFound', 'Export not-found items to CSV')}
+            </summary>
             <div class="history-detail-list">${renderReasonLines(entry.notFound)}</div>
           </details>` : '';
 
       const failuresSection = (entry.failures || []).length > 0
         ? `<details class="history-sub-details">
-            <summary class="history-sub-summary">Failures (${devicesFailed})</summary>
+            <summary class="history-sub-summary-row">
+              <span class="history-sub-summary">Failures (${devicesFailed})</span>
+              ${exportBtn(entryId, 'failures', 'Export failures to CSV')}
+            </summary>
             <div class="history-detail-list">${renderReasonLines(entry.failures)}</div>
           </details>` : '';
 
@@ -5588,6 +5630,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <div class="history-entry-header">
           <span class="history-timestamp">${escapeHtml(entry.timestamp)}</span>
           <span class="history-group-name">${escapeHtml(entry.groupName)}</span>
+          ${exportBtn(entryId, 'all', 'Export full history entry to CSV')}
         </div>
         <div class="history-entry-body">
           <span>Users: ${usersProcessed} | Discovered: ${devicesDiscovered} | Added: ${devicesAdded}${notFoundPart}${failuresPart}</span>
@@ -5607,6 +5650,58 @@ document.addEventListener("DOMContentLoaded", () => {
     }).join('');
 
     section.style.display = 'block';
+  };
+
+  // Export a history entry (or one of its categories) to CSV
+  const exportHistoryEntryCsv = (entryId, category) => {
+    const entry = createDeviceGroupHistory.find(e => (e.id || e.timestamp) === entryId);
+    if (!entry) return;
+
+    const escapeCsvVal = (v) => {
+      const s = String(v === null || v === undefined ? '' : v);
+      if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    };
+
+    let headers, rows, categorySuffix;
+    if (category === 'added') {
+      headers = ['Device Name'];
+      rows = (entry.addedDevices || []).map(name => [name]);
+      categorySuffix = 'added';
+    } else if (category === 'notFound') {
+      headers = ['Name', 'Reason'];
+      rows = (entry.notFound || []).map(f => [f.name || f.deviceName || '', f.reason]);
+      categorySuffix = 'not_found';
+    } else if (category === 'failures') {
+      headers = ['Name', 'Reason'];
+      rows = (entry.failures || []).map(f => [f.name || f.deviceName || '', f.reason]);
+      categorySuffix = 'failures';
+    } else { // 'all'
+      headers = ['Name', 'Status', 'Reason'];
+      rows = [
+        ...(entry.addedDevices || []).map(name => [name, 'Added', '']),
+        ...(entry.notFound || []).map(f => [f.name || f.deviceName || '', 'Not Found', f.reason]),
+        ...(entry.failures || []).map(f => [f.name || f.deviceName || '', 'Failed', f.reason])
+      ];
+      categorySuffix = 'all';
+    }
+
+    let csvContent = headers.map(escapeCsvVal).join(',') + '\n';
+    csvContent += rows.map(row => row.map(escapeCsvVal).join(',')).join('\n');
+
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    const safeGroupName = (entry.groupName || 'group').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 40);
+    const timestamp = new Date().toISOString().slice(0, 10);
+    link.setAttribute('download', `create_device_group_${safeGroupName}_${categorySuffix}_${timestamp}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // ══════════════════════════════════════════════════════════════
@@ -6357,6 +6452,16 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("confirmContinueDeviceGroupBtn").addEventListener("click", continueBigGroupCreation);
   document.getElementById("cancelConfirmDeviceGroupBtn").addEventListener("click", hideCreateDeviceGroupModal);
   document.getElementById("closeCreateDeviceGroupResultsBtn").addEventListener("click", hideCreateDeviceGroupModal);
+
+  // Export CSV buttons inside history list (event delegation)
+  document.getElementById('createDeviceGroupHistoryList').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-export-entry-id]');
+    if (btn) {
+      e.preventDefault();
+      e.stopPropagation();
+      exportHistoryEntryCsv(btn.dataset.exportEntryId, btn.dataset.exportCategory);
+    }
+  });
 
   // Close modal on Escape key
   document.addEventListener("keydown", (e) => {

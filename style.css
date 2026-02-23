@@ -1850,14 +1850,6 @@ input[type="checkbox"]:disabled + span {
   margin-bottom: 0;
 }
 
-.history-entry-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 4px;
-  gap: 8px;
-}
-
 .history-timestamp {
   font-size: 0.78rem;
   opacity: 0.65;
@@ -1869,6 +1861,7 @@ input[type="checkbox"]:disabled + span {
   font-weight: 600;
   color: var(--text-color);
   word-break: break-all;
+  flex: 1;
 }
 
 .history-entry-body {
@@ -1893,7 +1886,7 @@ input[type="checkbox"]:disabled + span {
   margin-top: 6px;
   border: 1px solid var(--border-color);
   border-radius: 3px;
-  padding: 4px 8px;
+  padding: 0 8px;
   background-color: var(--bg-color);
 }
 
@@ -1901,18 +1894,63 @@ input[type="checkbox"]:disabled + span {
   padding-bottom: 6px;
 }
 
-.history-sub-summary {
+/* Row wrapper so summary text and export button sit side-by-side */
+.history-sub-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   cursor: pointer;
+  list-style: none;
+  padding: 4px 0;
+  gap: 4px;
+}
+
+.history-sub-summary-row:hover .history-sub-summary {
+  opacity: 0.8;
+}
+
+.history-sub-summary {
   font-size: 0.82rem;
   font-weight: 500;
   color: var(--accent-color);
   user-select: none;
-  list-style: none;
-  padding: 2px 0;
+  flex: 1;
 }
 
-.history-sub-summary:hover {
-  opacity: 0.8;
+/* Small inline export button used inside history */
+.history-export-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-color);
+  border-radius: 3px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.history-export-btn:hover {
+  background: var(--accent-color);
+  color: #fff;
+  border-color: var(--accent-color);
+}
+
+.history-export-btn .material-icons {
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.history-entry-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+  gap: 8px;
 }
 
 .history-detail-list {
