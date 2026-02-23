@@ -465,6 +465,9 @@ document.addEventListener("DOMContentLoaded", () => {
     state.pagination.currentPage = 1;
     state.pagination.filteredData = [];
     state.pagination.selectedRowIds.clear(); // Clear selection when clearing table
+    // Hide the not-found section when clearing the table
+    const notFoundSection = document.getElementById('intuneDevicesNotFoundSection');
+    if (notFoundSection) notFoundSection.style.display = 'none';
   };
 
   // exportTableToCsv: Export current table data to CSV file
@@ -1751,6 +1754,9 @@ document.addEventListener("DOMContentLoaded", () => {
                   dynamicQuerySection.style.display = 'none';
                 }
               }
+              // Hide not-found section when showing group members
+              const notFoundSection = document.getElementById('intuneDevicesNotFoundSection');
+              if (notFoundSection) notFoundSection.style.display = 'none';
             }
             
             buildColumnFilters(data.lastGroupMembers);
@@ -1782,6 +1788,9 @@ document.addEventListener("DOMContentLoaded", () => {
               if (dynamicQuerySection) {
                 dynamicQuerySection.style.display = 'none';
               }
+
+              // Restore not-found section
+              renderIntuneDevicesNotFoundSection(context.notFoundItems || []);
             }
             
             buildColumnFilters(data.lastIntuneDevices);
@@ -2430,6 +2439,9 @@ document.addEventListener("DOMContentLoaded", () => {
           dynamicQuerySection.style.display = 'none';
         }
       }
+      // Hide not-found section when showing group members
+      const notFoundSectionGM = document.getElementById('intuneDevicesNotFoundSection');
+      if (notFoundSectionGM) notFoundSectionGM.style.display = 'none';
 
       updateGroupMembersTable(members);
 
@@ -4901,6 +4913,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const BIG_GROUP_THRESHOLD = 200;
   const MAX_FAILURES_TO_DISPLAY = 10;
 
+  // History persists across modal open/close within the same popup session
+  const createDeviceGroupHistory = [];
+
   // State for create device group feature
   const createDeviceGroupState = {
     baseGroupId: null,
@@ -4933,6 +4948,9 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById('transitiveMembers').checked = true;
 
     createDeviceGroupState.cancellationRequested = false;
+
+    // Show history if there are previous runs
+    renderCreateDeviceGroupHistory();
   };
 
   // Hide the create device group modal
@@ -5454,6 +5472,19 @@ document.addEventListener("DOMContentLoaded", () => {
         detailsDiv.appendChild(moreMsg);
       }
     }
+
+    // Record to history
+    createDeviceGroupHistory.push({
+      timestamp: new Date().toLocaleString(),
+      groupName: results.groupName,
+      baseGroupName: createDeviceGroupState.baseGroupName || '',
+      usersProcessed: results.usersProcessed,
+      devicesDiscovered: results.devicesDiscovered,
+      devicesAdded: results.devicesAdded,
+      devicesFailed: results.devicesFailed,
+      failures: results.failures || []
+    });
+    renderCreateDeviceGroupHistory();
   };
 
   // Show error
@@ -5466,6 +5497,44 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById('createDeviceGroupResultsDetails').innerHTML = '';
   };
 
+  // Render the history section in the Create Device Group modal
+  const renderCreateDeviceGroupHistory = () => {
+    const section = document.getElementById('createDeviceGroupHistorySection');
+    const list = document.getElementById('createDeviceGroupHistoryList');
+    if (!section || !list) return;
+
+    if (createDeviceGroupHistory.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+
+    list.innerHTML = createDeviceGroupHistory.slice().reverse().map(entry => {
+      const failureLines = entry.failures.length > 0
+        ? entry.failures.map(f =>
+            `<div class="history-failure-item"><strong>${escapeHtml(f.deviceName)}</strong> — ${escapeHtml(f.reason)}</div>`
+          ).join('')
+        : '';
+      const usersProcessed = escapeHtml(String(entry.usersProcessed));
+      const devicesDiscovered = escapeHtml(String(entry.devicesDiscovered));
+      const devicesAdded = escapeHtml(String(entry.devicesAdded));
+      const devicesFailed = escapeHtml(String(entry.devicesFailed));
+      return `<div class="history-entry">
+        <div class="history-entry-header">
+          <span class="history-timestamp">${escapeHtml(entry.timestamp)}</span>
+          <span class="history-group-name">${escapeHtml(entry.groupName)}</span>
+        </div>
+        <div class="history-entry-body">
+          <span>Base group: ${escapeHtml(entry.baseGroupName)}</span><br>
+          <span>Users processed: ${usersProcessed} | Devices discovered: ${devicesDiscovered}</span><br>
+          <span>Added: ${devicesAdded}${entry.devicesFailed > 0 ? ` | Not added: ${devicesFailed}` : ''}</span>
+          ${failureLines ? `<div class="history-failures">${failureLines}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+
+    section.style.display = 'block';
+  };
+
   // ══════════════════════════════════════════════════════════════
   // End of Create Device Group from Users Feature
   // ══════════════════════════════════════════════════════════════
@@ -5473,6 +5542,35 @@ document.addEventListener("DOMContentLoaded", () => {
   // ══════════════════════════════════════════════════════════════
   // Check Intune Devices Feature
   // ══════════════════════════════════════════════════════════════
+
+  // Render the expandable "Not Found" section for Check Intune Devices
+  const renderIntuneDevicesNotFoundSection = (items) => {
+    const section = document.getElementById('intuneDevicesNotFoundSection');
+    if (!section) return;
+
+    if (!items || items.length === 0) {
+      section.style.display = 'none';
+      section.innerHTML = '';
+      return;
+    }
+
+    const rows = items.map(item =>
+      `<div class="not-found-item">
+        <span class="not-found-name">${escapeHtml(item.name)}</span>
+        <span class="not-found-meta">${escapeHtml(item.type)} — ${escapeHtml(item.reason)}</span>
+      </div>`
+    ).join('');
+
+    section.innerHTML =
+      `<details>
+        <summary>
+          <i class="material-icons">info_outline</i>
+          Not Found (${items.length})
+        </summary>
+        <div class="not-found-list">${rows}</div>
+      </details>`;
+    section.style.display = 'block';
+  };
 
   // Fetch Intune managed device by Azure AD Device ID
   const getManagedDevicesByAzureAdDeviceId = async (azureAdDeviceId, token) => {
@@ -5572,6 +5670,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const allIntuneDevices = [];
       const deviceMap = new Map(); // For deduplication by azureADDeviceId
       let notFoundCount = 0;
+      const notFoundItems = [];
 
       // 3a: Resolve devices for users (reuse existing logic)
       logMessage('checkIntuneDevices: Step 3a - Resolving devices for users');
@@ -5580,6 +5679,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!user.userPrincipalName) {
           logMessage(`checkIntuneDevices: User ${user.displayName} has no UPN - skipping`);
           notFoundCount++;
+          notFoundItems.push({ name: user.displayName || 'Unknown user', type: 'User', reason: 'No UPN' });
           continue;
         }
 
@@ -5595,6 +5695,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (userDevices.length === 0) {
           notFoundCount++;
+          notFoundItems.push({ name: user.userPrincipalName, type: 'User', reason: 'No Intune devices found' });
         }
       }
 
@@ -5605,6 +5706,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!device.deviceId) {
           logMessage(`checkIntuneDevices: Device ${device.displayName} has no deviceId - skipping`);
           notFoundCount++;
+          notFoundItems.push({ name: device.displayName || 'Unknown device', type: 'Device', reason: 'No device ID' });
           continue;
         }
 
@@ -5620,6 +5722,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (intuneDevices.length === 0) {
           notFoundCount++;
+          notFoundItems.push({ name: device.displayName || device.deviceId, type: 'Device', reason: 'Not found in Intune' });
         }
       }
 
@@ -5641,7 +5744,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const intuneDevicesContext = {
         groupId: groupId,
         groupName: groupName,
-        summary: summary
+        summary: summary,
+        notFoundItems: notFoundItems
       };
 
       // Clear other data types from storage
@@ -5664,6 +5768,9 @@ document.addEventListener("DOMContentLoaded", () => {
       if (dynamicQuerySection) {
         dynamicQuerySection.style.display = 'none';
       }
+
+      // Render not-found expandable section
+      renderIntuneDevicesNotFoundSection(notFoundItems);
 
       updateIntuneDevicesTable(allIntuneDevices);
 

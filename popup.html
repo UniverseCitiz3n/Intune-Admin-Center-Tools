@@ -85,6 +85,9 @@
               </div>
             </details>
           </div>
+
+          <!-- Not Found Section (for Check Intune Devices) -->
+          <div id="intuneDevicesNotFoundSection" style="display: none;"></div>
           
           <div class="input-field profile-filter-container">
             <input type="text" id="profileFilterInput" placeholder="Filter by name...">
@@ -572,6 +575,17 @@
             <div id="createDeviceGroupResultsDetails" class="results-details"></div>
             <button id="closeCreateDeviceGroupResultsBtn" class="btn-close-results">Close</button>
           </div>
+        </div>
+
+        <!-- History section -->
+        <div id="createDeviceGroupHistorySection" style="display: none;">
+          <details id="createDeviceGroupHistoryDetails">
+            <summary>
+              <i class="material-icons">history</i>
+              Action History
+            </summary>
+            <div id="createDeviceGroupHistoryList" class="history-list"></div>
+          </details>
         </div>
       </div>
     </div>

@@ -1723,6 +1723,172 @@ input[type="checkbox"]:disabled + span {
   line-height: 1.5;
 }
 
+/* Not Found Section (Check Intune Devices) */
+#intuneDevicesNotFoundSection {
+  margin: 6px 0 12px 0;
+}
+
+#intuneDevicesNotFoundSection details {
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 8px 12px;
+  background-color: var(--bg-color);
+}
+
+#intuneDevicesNotFoundSection details[open] {
+  padding-bottom: 12px;
+}
+
+#intuneDevicesNotFoundSection summary {
+  cursor: pointer;
+  padding: 4px 0;
+  font-weight: 500;
+  color: var(--accent-color);
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#intuneDevicesNotFoundSection summary:hover {
+  opacity: 0.8;
+}
+
+#intuneDevicesNotFoundSection summary i {
+  vertical-align: middle;
+  font-size: 18px;
+}
+
+.not-found-list {
+  margin: 8px 0 0 0;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.not-found-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 5px 8px;
+  border-left: 3px solid var(--accent-color);
+  background-color: var(--table-stripe);
+  border-radius: 3px;
+  margin-bottom: 4px;
+  font-size: 0.85rem;
+  gap: 8px;
+}
+
+.not-found-name {
+  font-weight: 500;
+  color: var(--text-color);
+  word-break: break-all;
+}
+
+.not-found-meta {
+  color: var(--text-color);
+  opacity: 0.7;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Create Device Group History Section */
+#createDeviceGroupHistorySection {
+  margin-top: 16px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 12px;
+}
+
+#createDeviceGroupHistoryDetails {
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 8px 12px;
+  background-color: var(--bg-color);
+}
+
+#createDeviceGroupHistoryDetails[open] {
+  padding-bottom: 12px;
+}
+
+#createDeviceGroupHistoryDetails > summary {
+  cursor: pointer;
+  padding: 4px 0;
+  font-weight: 500;
+  color: var(--accent-color);
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+}
+
+#createDeviceGroupHistoryDetails > summary:hover {
+  opacity: 0.8;
+}
+
+#createDeviceGroupHistoryDetails > summary i {
+  vertical-align: middle;
+  font-size: 18px;
+}
+
+.history-list {
+  margin: 8px 0 0 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.history-entry {
+  background-color: var(--table-stripe);
+  border-left: 3px solid var(--accent-color);
+  border-radius: 3px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+}
+
+.history-entry:last-child {
+  margin-bottom: 0;
+}
+
+.history-entry-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+  gap: 8px;
+}
+
+.history-timestamp {
+  font-size: 0.78rem;
+  opacity: 0.65;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.history-group-name {
+  font-weight: 600;
+  color: var(--text-color);
+  word-break: break-all;
+}
+
+.history-entry-body {
+  color: var(--text-color);
+  line-height: 1.6;
+}
+
+.history-failures {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-color);
+}
+
+.history-failure-item {
+  padding: 3px 0;
+  font-size: 0.82rem;
+  color: var(--text-color);
+  opacity: 0.85;
+}
+
 /* ================================================== */
 /* Collect Logs Modal Styles                          */
 /* ================================================== */
