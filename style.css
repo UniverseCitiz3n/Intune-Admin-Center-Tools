@@ -405,6 +405,8 @@ table {
 }
 .output-area {
   flex: 3;
+  overflow-x: auto; /* Enable horizontal scrolling if needed */
+  max-width: 100%; /* Prevent expanding beyond available space */
 }
 
 /* V2.0 Sidebar Layout - Modern Grid-Based Controls
@@ -545,6 +547,20 @@ table {
 #configTable table {
   width: 100%;
   margin-top: 20px;
+  table-layout: fixed; /* Fixed layout prevents table from expanding */
+}
+
+#configTable {
+  overflow-x: auto; /* Enable horizontal scrolling if content is too wide */
+  max-width: 100%; /* Prevent container from expanding beyond parent */
+}
+
+/* Table cells should wrap text properly */
+#configTable td,
+#configTable th {
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-word;
 }
 
 /* Notification styling */
@@ -674,6 +690,104 @@ table {
 /* Profile filter input styling */
 #profileFilterInput {
   margin-bottom: 0;
+}
+
+/* Column filters container */
+.column-filters-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+  max-width: 100%;
+  overflow: visible;
+}
+
+.column-filter-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.column-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  background: var(--btn-modern-bg);
+  color: var(--text-color);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.column-filter-btn:hover {
+  background-color: var(--btn-modern-hover-bg);
+  border-color: var(--accent-color);
+}
+
+.column-filter-btn.active {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+
+.column-filter-btn .material-icons {
+  font-size: 14px;
+}
+
+.column-filter-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  min-width: 140px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: var(--box-shadow-md);
+  margin-top: 4px;
+  padding: 4px 0;
+}
+
+.column-filter-menu.open {
+  display: block;
+}
+
+.column-filter-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--text-color);
+  transition: background-color 0.15s;
+}
+
+.column-filter-option:hover {
+  background-color: var(--table-hover);
+}
+
+.column-filter-option input[type="checkbox"] {
+  margin: 0;
+  pointer-events: none;
+}
+
+.column-filter-selected-text {
+  display: inline-block;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 /* Target type toggle icons styling */
@@ -1607,6 +1721,297 @@ input[type="checkbox"]:disabled + span {
   overflow-wrap: break-word;
   color: var(--text-color);
   line-height: 1.5;
+}
+
+/* Not Found Section (Check Intune Devices) */
+#intuneDevicesNotFoundSection {
+  margin: 6px 0 12px 0;
+}
+
+#intuneDevicesNotFoundSection details {
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 8px 12px;
+  background-color: var(--bg-color);
+}
+
+#intuneDevicesNotFoundSection details[open] {
+  padding-bottom: 12px;
+}
+
+#intuneDevicesNotFoundSection summary {
+  cursor: pointer;
+  padding: 4px 0;
+  font-weight: 500;
+  color: var(--accent-color);
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#intuneDevicesNotFoundSection summary:hover {
+  opacity: 0.8;
+}
+
+#intuneDevicesNotFoundSection summary i {
+  vertical-align: middle;
+  font-size: 18px;
+}
+
+.not-found-list {
+  margin: 8px 0 0 0;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.not-found-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 5px 8px;
+  border-left: 3px solid var(--accent-color);
+  background-color: var(--table-stripe);
+  border-radius: 3px;
+  margin-bottom: 4px;
+  font-size: 0.85rem;
+  gap: 8px;
+}
+
+.not-found-name {
+  font-weight: 500;
+  color: var(--text-color);
+  word-break: break-all;
+}
+
+.not-found-meta {
+  color: var(--text-color);
+  opacity: 0.7;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Create Device Group History Section */
+#createDeviceGroupHistorySection {
+  margin-top: 16px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 12px;
+}
+
+#createDeviceGroupHistoryDetails {
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 8px 12px;
+  background-color: var(--bg-color);
+}
+
+#createDeviceGroupHistoryDetails[open] {
+  padding-bottom: 12px;
+}
+
+#createDeviceGroupHistoryDetails > summary {
+  cursor: pointer;
+  padding: 4px 0;
+  font-weight: 500;
+  color: var(--accent-color);
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+}
+
+#createDeviceGroupHistoryDetails > summary:hover {
+  opacity: 0.8;
+}
+
+#createDeviceGroupHistoryDetails > summary i {
+  vertical-align: middle;
+  font-size: 18px;
+}
+
+.history-list {
+  margin: 8px 0 0 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.history-entry {
+  background-color: var(--table-stripe);
+  border-left: 3px solid var(--accent-color);
+  border-radius: 3px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+}
+
+.history-entry:last-child {
+  margin-bottom: 0;
+}
+
+.history-timestamp {
+  font-size: 0.78rem;
+  opacity: 0.65;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.history-group-name {
+  font-weight: 600;
+  color: var(--text-color);
+  word-break: break-all;
+  flex: 1;
+}
+
+.history-entry-body {
+  color: var(--text-color);
+  line-height: 1.6;
+}
+
+.history-failures {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-color);
+}
+
+.history-failure-item {
+  padding: 3px 0;
+  font-size: 0.82rem;
+  color: var(--text-color);
+  opacity: 0.85;
+}
+
+.history-sub-details {
+  margin-top: 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  padding: 0 8px;
+  background-color: var(--bg-color);
+}
+
+.history-sub-details[open] {
+  padding-bottom: 6px;
+}
+
+/* Row wrapper so summary text and export button sit side-by-side */
+.history-sub-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  list-style: none;
+  padding: 4px 0;
+  gap: 4px;
+}
+
+.history-sub-summary-row:hover .history-sub-summary {
+  opacity: 0.8;
+}
+
+.history-sub-summary {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--accent-color);
+  user-select: none;
+  flex: 1;
+}
+
+/* Small inline export button used inside history */
+.history-export-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-color);
+  border-radius: 3px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.history-export-btn:hover {
+  background: var(--accent-color);
+  color: #fff;
+  border-color: var(--accent-color);
+}
+
+.history-export-btn .material-icons {
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.history-entry-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+  gap: 8px;
+}
+
+.history-detail-list {
+  margin-top: 4px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.history-detail-item {
+  padding: 2px 0;
+  font-size: 0.80rem;
+  color: var(--text-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.history-detail-item:last-child {
+  border-bottom: none;
+}
+
+/* Per-base-group collapsible wrapper inside history */
+.history-base-group-details {
+  margin-bottom: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background-color: var(--bg-color);
+  overflow: hidden;
+}
+
+.history-base-group-details:last-child {
+  margin-bottom: 0;
+}
+
+.history-base-group-details[open] {
+  border-color: var(--accent-color);
+}
+
+.history-base-group-summary {
+  cursor: pointer;
+  padding: 7px 10px;
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--accent-color);
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.history-base-group-summary:hover {
+  opacity: 0.8;
+}
+
+.history-base-group-count {
+  font-weight: 400;
+  opacity: 0.7;
+  font-size: 0.82rem;
+}
+
+.history-base-group-entries {
+  padding: 0 8px 8px 8px;
 }
 
 /* ================================================== */
