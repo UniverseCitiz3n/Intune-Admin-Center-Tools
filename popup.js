@@ -465,6 +465,9 @@ document.addEventListener("DOMContentLoaded", () => {
     state.pagination.currentPage = 1;
     state.pagination.filteredData = [];
     state.pagination.selectedRowIds.clear(); // Clear selection when clearing table
+    // Hide the not-found section when clearing the table
+    const notFoundSection = document.getElementById('intuneDevicesNotFoundSection');
+    if (notFoundSection) notFoundSection.style.display = 'none';
   };
 
   // exportTableToCsv: Export current table data to CSV file
@@ -1751,6 +1754,9 @@ document.addEventListener("DOMContentLoaded", () => {
                   dynamicQuerySection.style.display = 'none';
                 }
               }
+              // Hide not-found section when showing group members
+              const notFoundSection = document.getElementById('intuneDevicesNotFoundSection');
+              if (notFoundSection) notFoundSection.style.display = 'none';
             }
             
             buildColumnFilters(data.lastGroupMembers);
@@ -1782,6 +1788,9 @@ document.addEventListener("DOMContentLoaded", () => {
               if (dynamicQuerySection) {
                 dynamicQuerySection.style.display = 'none';
               }
+
+              // Restore not-found section
+              renderIntuneDevicesNotFoundSection(context.notFoundItems || []);
             }
             
             buildColumnFilters(data.lastIntuneDevices);
@@ -2430,6 +2439,9 @@ document.addEventListener("DOMContentLoaded", () => {
           dynamicQuerySection.style.display = 'none';
         }
       }
+      // Hide not-found section when showing group members
+      const notFoundSectionGM = document.getElementById('intuneDevicesNotFoundSection');
+      if (notFoundSectionGM) notFoundSectionGM.style.display = 'none';
 
       updateGroupMembersTable(members);
 
@@ -4901,6 +4913,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const BIG_GROUP_THRESHOLD = 200;
   const MAX_FAILURES_TO_DISPLAY = 10;
 
+  // History persists across modal open/close within the same popup session
+  const createDeviceGroupHistory = [];
+
   // State for create device group feature
   const createDeviceGroupState = {
     baseGroupId: null,
@@ -4933,6 +4948,15 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById('transitiveMembers').checked = true;
 
     createDeviceGroupState.cancellationRequested = false;
+
+    // Load history from storage then render
+    chrome.storage.local.get(['createDeviceGroupHistory'], (data) => {
+      if (data.createDeviceGroupHistory && Array.isArray(data.createDeviceGroupHistory)) {
+        createDeviceGroupHistory.length = 0;
+        data.createDeviceGroupHistory.forEach(e => createDeviceGroupHistory.push(e));
+      }
+      renderCreateDeviceGroupHistory();
+    });
   };
 
   // Hide the create device group modal
@@ -5094,6 +5118,7 @@ document.addEventListener("DOMContentLoaded", () => {
       updateProgress(`Finding Intune devices for ${users.length} users...`, 30);
       const allDevices = [];
       const deviceMap = new Map(); // For deduplication by azureADDeviceId
+      const usersNoDevices = []; // Users with no Intune devices matching selected platforms
 
       for (let i = 0; i < users.length; i++) {
         if (createDeviceGroupState.cancellationRequested) {
@@ -5102,7 +5127,19 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         const user = users[i];
+
+        if (!user.userPrincipalName) {
+          usersNoDevices.push({
+            name: user.displayName || 'Unknown user',
+            reason: 'No UPN – cannot look up devices'
+          });
+          const progress = 30 + Math.floor((i + 1) / users.length * 40);
+          updateProgress(`Finding devices... (${i + 1}/${users.length} users processed)`, progress);
+          continue;
+        }
+
         const userDevices = await fetchDevicesByPrimaryUser(user.userPrincipalName, token);
+        let matchedCount = 0;
         
         for (const device of userDevices) {
           const platform = normalizePlatform(device.operatingSystem, device.deviceType);
@@ -5114,8 +5151,18 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!deviceMap.has(deviceKey)) {
               deviceMap.set(deviceKey, device);
               allDevices.push(device);
+              matchedCount++;
             }
           }
+        }
+
+        if (matchedCount === 0) {
+          usersNoDevices.push({
+            name: user.userPrincipalName,
+            reason: userDevices.length === 0
+              ? 'No Intune devices found'
+              : 'No devices match selected platforms'
+          });
         }
 
         // Update progress
@@ -5126,6 +5173,7 @@ document.addEventListener("DOMContentLoaded", () => {
       logMessage(`createDeviceGroup: Discovered ${allDevices.length} unique devices`);
       createDeviceGroupState.discoveredDevices = allDevices;
       createDeviceGroupState.userCount = users.length; // Save user count for results
+      createDeviceGroupState.usersNoDevices = usersNoDevices;
 
       // Step 3: Check if big group confirmation needed
       if (allDevices.length > BIG_GROUP_THRESHOLD) {
@@ -5262,6 +5310,8 @@ document.addEventListener("DOMContentLoaded", () => {
       devicesDiscovered: devices.length,
       devicesAdded: addResults.added,
       devicesFailed: addResults.failed,
+      addedDevices: addResults.addedDevices,
+      notFound: addResults.notFound,
       failures: addResults.failures
     });
   };
@@ -5272,7 +5322,9 @@ document.addEventListener("DOMContentLoaded", () => {
       total: devices.length,
       added: 0,
       failed: 0,
-      failures: []
+      addedDevices: [],  // device names successfully added
+      notFound: [],      // {deviceName, reason} - not resolvable in Entra ID
+      failures: []       // {deviceName, reason} - add-operation errors
     };
 
     // First, get the Entra device IDs for the Intune devices
@@ -5303,23 +5355,20 @@ document.addEventListener("DOMContentLoaded", () => {
               azureADDeviceId: device.azureADDeviceId
             });
           } else {
-            results.failed++;
-            results.failures.push({
-              deviceName: device.deviceName || 'Unknown',
+            results.notFound.push({
+              name: device.deviceName || 'Unknown',
               reason: 'Device not found in Entra ID'
             });
           }
         } catch (error) {
-          results.failed++;
-          results.failures.push({
-            deviceName: device.deviceName || 'Unknown',
+          results.notFound.push({
+            name: device.deviceName || 'Unknown',
             reason: error.message
           });
         }
       } else {
-        results.failed++;
-        results.failures.push({
-          deviceName: device.deviceName || 'Unknown',
+        results.notFound.push({
+          name: device.deviceName || 'Unknown',
           reason: 'No Azure AD Device ID available'
         });
       }
@@ -5365,10 +5414,11 @@ document.addEventListener("DOMContentLoaded", () => {
             
             if (response.status === 204 || response.status === 200 || response.status === 201) {
               results.added++;
+              results.addedDevices.push(device.displayName);
             } else {
               results.failed++;
               results.failures.push({
-                deviceName: device.displayName,
+                name: device.displayName,
                 reason: response.body?.error?.message || `HTTP ${response.status}`
               });
             }
@@ -5388,10 +5438,11 @@ document.addEventListener("DOMContentLoaded", () => {
               })
             });
             results.added++;
+            results.addedDevices.push(device.displayName);
           } catch (e) {
             results.failed++;
             results.failures.push({
-              deviceName: device.displayName,
+              name: device.displayName,
               reason: e.message
             });
           }
@@ -5408,11 +5459,14 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById('createDeviceGroupProgressSection').style.display = 'none';
     document.getElementById('createDeviceGroupResultsSection').style.display = 'block';
 
+    const notFoundCount = (results.notFound || []).length;
     let summaryMsg = `✓ New group created: ${results.groupName}\n`;
     summaryMsg += `\nUsers processed: ${results.usersProcessed}`;
     summaryMsg += `\nDevices discovered: ${results.devicesDiscovered}`;
     summaryMsg += `\nDevices added successfully: ${results.devicesAdded}`;
-    
+    if (notFoundCount > 0) {
+      summaryMsg += `\nNot found: ${notFoundCount}`;
+    }
     if (results.devicesFailed > 0) {
       summaryMsg += `\nFailures: ${results.devicesFailed}`;
     }
@@ -5422,38 +5476,78 @@ document.addEventListener("DOMContentLoaded", () => {
     const detailsDiv = document.getElementById('createDeviceGroupResultsDetails');
     detailsDiv.innerHTML = '';
 
-    if (results.failures && results.failures.length > 0) {
-      const failureTitle = document.createElement('p');
-      failureTitle.style.fontWeight = 'bold';
-      failureTitle.style.marginTop = '16px';
-      failureTitle.textContent = 'Failed devices:';
-      detailsDiv.appendChild(failureTitle);
+    // Helper to append a titled list of items
+    const appendItemList = (title, items, renderItem) => {
+      const heading = document.createElement('p');
+      heading.style.fontWeight = 'bold';
+      heading.style.marginTop = '16px';
+      heading.textContent = title;
+      detailsDiv.appendChild(heading);
+      const toShow = items.slice(0, MAX_FAILURES_TO_DISPLAY);
+      toShow.forEach(item => detailsDiv.appendChild(renderItem(item)));
+      if (items.length > MAX_FAILURES_TO_DISPLAY) {
+        const more = document.createElement('p');
+        more.textContent = `... and ${items.length - MAX_FAILURES_TO_DISPLAY} more.`;
+        more.style.fontStyle = 'italic';
+        detailsDiv.appendChild(more);
+      }
+    };
 
-      // Show first 10 failures
-      const failuresToShow = results.failures.slice(0, MAX_FAILURES_TO_DISPLAY);
-      failuresToShow.forEach(failure => {
+    if (results.notFound && results.notFound.length > 0) {
+      appendItemList('Not found in Entra ID:', results.notFound, (item) => {
+        const el = document.createElement('div');
+        el.className = 'failure-item';
+        const nameStrong = document.createElement('strong');
+        nameStrong.textContent = item.name || item.deviceName;
+        el.appendChild(nameStrong);
+        el.appendChild(document.createElement('br'));
+        const reasonSmall = document.createElement('small');
+        reasonSmall.textContent = `Reason: ${item.reason}`;
+        el.appendChild(reasonSmall);
+        return el;
+      });
+    }
+
+    if (results.failures && results.failures.length > 0) {
+      appendItemList('Failed to add:', results.failures, (failure) => {
         const failureItem = document.createElement('div');
         failureItem.className = 'failure-item';
-
         const nameStrong = document.createElement('strong');
-        nameStrong.textContent = failure.deviceName;
+        nameStrong.textContent = failure.name || failure.deviceName;
         failureItem.appendChild(nameStrong);
         failureItem.appendChild(document.createElement('br'));
-
         const reasonSmall = document.createElement('small');
         reasonSmall.textContent = `Reason: ${failure.reason}`;
         failureItem.appendChild(reasonSmall);
-
-        detailsDiv.appendChild(failureItem);
+        return failureItem;
       });
-
-      if (results.failures.length > MAX_FAILURES_TO_DISPLAY) {
-        const moreMsg = document.createElement('p');
-        moreMsg.textContent = `... and ${results.failures.length - MAX_FAILURES_TO_DISPLAY} more failures.`;
-        moreMsg.style.fontStyle = 'italic';
-        detailsDiv.appendChild(moreMsg);
-      }
     }
+
+    // Record to history and persist
+    const entry = {
+      id: String(Date.now()),
+      timestamp: new Date().toLocaleString(),
+      groupName: results.groupName,
+      baseGroupName: createDeviceGroupState.baseGroupName || '',
+      usersProcessed: results.usersProcessed,
+      devicesDiscovered: results.devicesDiscovered,
+      devicesAdded: results.devicesAdded,
+      devicesFailed: results.devicesFailed,
+      addedDevices: results.addedDevices || [],
+      // Merge discovery-phase "no devices" with Entra lookup failures into one "not found" list
+      notFound: [
+        ...(createDeviceGroupState.usersNoDevices || []),
+        ...(results.notFound || [])
+      ],
+      failures: results.failures || []
+    };
+    createDeviceGroupHistory.push(entry);
+    // Cap at 10 entries (oldest removed first)
+    if (createDeviceGroupHistory.length > 10) {
+      createDeviceGroupHistory.splice(0, createDeviceGroupHistory.length - 10);
+    }
+    chrome.storage.local.set({ createDeviceGroupHistory: createDeviceGroupHistory });
+    renderCreateDeviceGroupHistory();
   };
 
   // Show error
@@ -5466,6 +5560,150 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById('createDeviceGroupResultsDetails').innerHTML = '';
   };
 
+  // Render the history section in the Create Device Group modal
+  const renderCreateDeviceGroupHistory = () => {
+    const section = document.getElementById('createDeviceGroupHistorySection');
+    const list = document.getElementById('createDeviceGroupHistoryList');
+    if (!section || !list) return;
+
+    if (createDeviceGroupHistory.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+
+    // Group entries by baseGroupName (preserve insertion order of groups, newest entry first)
+    const grouped = new Map(); // baseGroupName → entries[]
+    createDeviceGroupHistory.slice().reverse().forEach(entry => {
+      const key = entry.baseGroupName || '(unknown)';
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(entry);
+    });
+
+    const currentBase = createDeviceGroupState.baseGroupName || '';
+
+    const exportBtn = (entryId, category, title) =>
+      `<button class="history-export-btn" data-export-entry-id="${escapeHtml(entryId)}" data-export-category="${escapeHtml(category)}" title="${escapeHtml(title)}"><i class="material-icons">download</i></button>`;
+
+    const renderReasonLines = (items) =>
+      items.map(f =>
+        `<div class="history-detail-item"><strong>${escapeHtml(f.name || f.deviceName || '')}</strong> — ${escapeHtml(f.reason)}</div>`
+      ).join('');
+
+    const renderEntry = (entry) => {
+      const entryId = entry.id || entry.timestamp;
+      const usersProcessed = escapeHtml(String(entry.usersProcessed));
+      const devicesDiscovered = escapeHtml(String(entry.devicesDiscovered));
+      const devicesAdded = escapeHtml(String(entry.devicesAdded));
+      const notFoundCount = escapeHtml(String((entry.notFound || []).length));
+      const devicesFailed = escapeHtml(String(entry.devicesFailed));
+
+      const addedSection = (entry.addedDevices || []).length > 0
+        ? `<details class="history-sub-details">
+            <summary class="history-sub-summary-row">
+              <span class="history-sub-summary">Added (${escapeHtml(String(entry.addedDevices.length))})</span>
+              ${exportBtn(entryId, 'added', 'Export added devices to CSV')}
+            </summary>
+            <div class="history-detail-list">${entry.addedDevices.map(name => `<div class="history-detail-item">${escapeHtml(String(name))}</div>`).join('')}</div>
+          </details>` : '';
+
+      const notFoundSection = (entry.notFound || []).length > 0
+        ? `<details class="history-sub-details">
+            <summary class="history-sub-summary-row">
+              <span class="history-sub-summary">Not found (${notFoundCount})</span>
+              ${exportBtn(entryId, 'notFound', 'Export not-found items to CSV')}
+            </summary>
+            <div class="history-detail-list">${renderReasonLines(entry.notFound)}</div>
+          </details>` : '';
+
+      const failuresSection = (entry.failures || []).length > 0
+        ? `<details class="history-sub-details">
+            <summary class="history-sub-summary-row">
+              <span class="history-sub-summary">Failures (${devicesFailed})</span>
+              ${exportBtn(entryId, 'failures', 'Export failures to CSV')}
+            </summary>
+            <div class="history-detail-list">${renderReasonLines(entry.failures)}</div>
+          </details>` : '';
+
+      const notFoundPart = (entry.notFound || []).length > 0 ? ` | Not found: ${notFoundCount}` : '';
+      const failuresPart = entry.devicesFailed > 0 ? ` | Failures: ${devicesFailed}` : '';
+      return `<div class="history-entry">
+        <div class="history-entry-header">
+          <span class="history-timestamp">${escapeHtml(entry.timestamp)}</span>
+          <span class="history-group-name">${escapeHtml(entry.groupName)}</span>
+          ${exportBtn(entryId, 'all', 'Export full history entry to CSV')}
+        </div>
+        <div class="history-entry-body">
+          <span>Users: ${usersProcessed} | Discovered: ${devicesDiscovered} | Added: ${devicesAdded}${notFoundPart}${failuresPart}</span>
+          ${addedSection}${notFoundSection}${failuresSection}
+        </div>
+      </div>`;
+    };
+
+    list.innerHTML = Array.from(grouped.entries()).map(([baseGroup, entries]) => {
+      const isCurrentBase = baseGroup === currentBase;
+      const openAttr = isCurrentBase ? ' open' : '';
+      const entriesHtml = entries.map(renderEntry).join('');
+      return `<details class="history-base-group-details"${openAttr}>
+        <summary class="history-base-group-summary">${escapeHtml(baseGroup)} <span class="history-base-group-count">(${entries.length})</span></summary>
+        <div class="history-base-group-entries">${entriesHtml}</div>
+      </details>`;
+    }).join('');
+
+    section.style.display = 'block';
+  };
+
+  // Export a history entry (or one of its categories) to CSV
+  const exportHistoryEntryCsv = (entryId, category) => {
+    const entry = createDeviceGroupHistory.find(e => (e.id || e.timestamp) === entryId);
+    if (!entry) return;
+
+    const escapeCsvVal = (v) => {
+      const s = String(v === null || v === undefined ? '' : v);
+      if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    };
+
+    let headers, rows, categorySuffix;
+    if (category === 'added') {
+      headers = ['Device Name'];
+      rows = (entry.addedDevices || []).map(name => [name]);
+      categorySuffix = 'added';
+    } else if (category === 'notFound') {
+      headers = ['Name', 'Reason'];
+      rows = (entry.notFound || []).map(f => [f.name || f.deviceName || '', f.reason]);
+      categorySuffix = 'not_found';
+    } else if (category === 'failures') {
+      headers = ['Name', 'Reason'];
+      rows = (entry.failures || []).map(f => [f.name || f.deviceName || '', f.reason]);
+      categorySuffix = 'failures';
+    } else { // 'all'
+      headers = ['Name', 'Status', 'Reason'];
+      rows = [
+        ...(entry.addedDevices || []).map(name => [name, 'Added', '']),
+        ...(entry.notFound || []).map(f => [f.name || f.deviceName || '', 'Not Found', f.reason]),
+        ...(entry.failures || []).map(f => [f.name || f.deviceName || '', 'Failed', f.reason])
+      ];
+      categorySuffix = 'all';
+    }
+
+    let csvContent = headers.map(escapeCsvVal).join(',') + '\n';
+    csvContent += rows.map(row => row.map(escapeCsvVal).join(',')).join('\n');
+
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    const safeGroupName = (entry.groupName || 'group').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 40);
+    const timestamp = new Date().toISOString().slice(0, 10);
+    link.setAttribute('download', `create_device_group_${safeGroupName}_${categorySuffix}_${timestamp}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   // ══════════════════════════════════════════════════════════════
   // End of Create Device Group from Users Feature
   // ══════════════════════════════════════════════════════════════
@@ -5473,6 +5711,35 @@ document.addEventListener("DOMContentLoaded", () => {
   // ══════════════════════════════════════════════════════════════
   // Check Intune Devices Feature
   // ══════════════════════════════════════════════════════════════
+
+  // Render the expandable "Not Found" section for Check Intune Devices
+  const renderIntuneDevicesNotFoundSection = (items) => {
+    const section = document.getElementById('intuneDevicesNotFoundSection');
+    if (!section) return;
+
+    if (!items || items.length === 0) {
+      section.style.display = 'none';
+      section.innerHTML = '';
+      return;
+    }
+
+    const rows = items.map(item =>
+      `<div class="not-found-item">
+        <span class="not-found-name">${escapeHtml(item.name)}</span>
+        <span class="not-found-meta">${escapeHtml(item.type)} — ${escapeHtml(item.reason)}</span>
+      </div>`
+    ).join('');
+
+    section.innerHTML =
+      `<details>
+        <summary>
+          <i class="material-icons">info_outline</i>
+          Not Found (${items.length})
+        </summary>
+        <div class="not-found-list">${rows}</div>
+      </details>`;
+    section.style.display = 'block';
+  };
 
   // Fetch Intune managed device by Azure AD Device ID
   const getManagedDevicesByAzureAdDeviceId = async (azureAdDeviceId, token) => {
@@ -5572,6 +5839,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const allIntuneDevices = [];
       const deviceMap = new Map(); // For deduplication by azureADDeviceId
       let notFoundCount = 0;
+      const notFoundItems = [];
 
       // 3a: Resolve devices for users (reuse existing logic)
       logMessage('checkIntuneDevices: Step 3a - Resolving devices for users');
@@ -5580,6 +5848,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!user.userPrincipalName) {
           logMessage(`checkIntuneDevices: User ${user.displayName} has no UPN - skipping`);
           notFoundCount++;
+          notFoundItems.push({ name: user.displayName || 'Unknown user', type: 'User', reason: 'No UPN' });
           continue;
         }
 
@@ -5595,6 +5864,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (userDevices.length === 0) {
           notFoundCount++;
+          notFoundItems.push({ name: user.userPrincipalName, type: 'User', reason: 'No Intune devices found' });
         }
       }
 
@@ -5605,6 +5875,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!device.deviceId) {
           logMessage(`checkIntuneDevices: Device ${device.displayName} has no deviceId - skipping`);
           notFoundCount++;
+          notFoundItems.push({ name: device.displayName || 'Unknown device', type: 'Device', reason: 'No device ID' });
           continue;
         }
 
@@ -5620,6 +5891,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (intuneDevices.length === 0) {
           notFoundCount++;
+          notFoundItems.push({ name: device.displayName || device.deviceId, type: 'Device', reason: 'Not found in Intune' });
         }
       }
 
@@ -5641,7 +5913,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const intuneDevicesContext = {
         groupId: groupId,
         groupName: groupName,
-        summary: summary
+        summary: summary,
+        notFoundItems: notFoundItems
       };
 
       // Clear other data types from storage
@@ -5664,6 +5937,9 @@ document.addEventListener("DOMContentLoaded", () => {
       if (dynamicQuerySection) {
         dynamicQuerySection.style.display = 'none';
       }
+
+      // Render not-found expandable section
+      renderIntuneDevicesNotFoundSection(notFoundItems);
 
       updateIntuneDevicesTable(allIntuneDevices);
 
@@ -6176,6 +6452,16 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("confirmContinueDeviceGroupBtn").addEventListener("click", continueBigGroupCreation);
   document.getElementById("cancelConfirmDeviceGroupBtn").addEventListener("click", hideCreateDeviceGroupModal);
   document.getElementById("closeCreateDeviceGroupResultsBtn").addEventListener("click", hideCreateDeviceGroupModal);
+
+  // Export CSV buttons inside history list (event delegation)
+  document.getElementById('createDeviceGroupHistoryList').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-export-entry-id]');
+    if (btn) {
+      e.preventDefault();
+      e.stopPropagation();
+      exportHistoryEntryCsv(btn.dataset.exportEntryId, btn.dataset.exportCategory);
+    }
+  });
 
   // Close modal on Escape key
   document.addEventListener("keydown", (e) => {
