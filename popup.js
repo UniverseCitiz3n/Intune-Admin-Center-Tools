@@ -1262,6 +1262,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const updateActionButtonsState = () => {
     const selected = document.querySelectorAll('#groupResults input[type=checkbox]:checked');
     const hasDynamic = Array.from(selected).some(cb => isDynamicGroup(cb.value));
+    const multipleSelected = selected.length > 1;
     
     // Collect the names of dynamic groups that are selected
     const dynamicGroupNames = Array.from(selected)
@@ -1283,6 +1284,25 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.classList.remove('disabled');
         // Remove tooltip when buttons are enabled
         btn.removeAttribute('title');
+      }
+    });
+
+    // Buttons that require exactly one group – disable when multiple are selected
+    const singleGroupBtnIds = ['bulkAddMembers', 'createDeviceGroupFromUsers', 'checkIntuneDevices'];
+    const checkIntuneDefaultTitle = 'Shows Intune-managed devices related to members of this group (users → UPN, devices → Entra device id).';
+    singleGroupBtnIds.forEach(id => {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      if (multipleSelected) {
+        btn.classList.add('disabled');
+        btn.title = 'Select exactly one group.';
+      } else {
+        btn.classList.remove('disabled');
+        if (id === 'checkIntuneDevices') {
+          btn.title = checkIntuneDefaultTitle;
+        } else {
+          btn.removeAttribute('title');
+        }
       }
     });
     
@@ -2961,24 +2981,22 @@ document.addEventListener("DOMContentLoaded", () => {
   const handleClearGroupMembers = async () => {
     logMessage("clearGroupMembers clicked");
     
-    // Try to use cached group info if we're viewing group members
+    // Determine the target group – selected takes precedence over cache
     let groupId, groupName;
-    
-    if (state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup) {
-      // Use cached group info from "Check members"
+    const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
+
+    if (selected.length === 1) {
+      groupId = selected[0].value;
+      groupName = selected[0].dataset.groupName;
+      logMessage(`clearGroupMembers: Using selected group - ID: ${groupId}, Name: ${groupName}`);
+    } else if (selected.length === 0 && state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup) {
+      // Fall back to cached group info from "Check members"
       groupId = state.lastCheckedGroup.groupId;
       groupName = state.lastCheckedGroup.groupName;
       logMessage(`clearGroupMembers: Using cached group - ID: ${groupId}, Name: ${groupName}`);
     } else {
-      // Fall back to requiring selected group from search results
-      const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
-      if (selected.length !== 1) {
-        showResultNotification('Select exactly one group to clear members.', 'error');
-        return;
-      }
-      groupId = selected[0].value;
-      groupName = selected[0].dataset.groupName;
-      logMessage(`clearGroupMembers: Using selected group - ID: ${groupId}, Name: ${groupName}`);
+      showResultNotification('Select exactly one group to clear members.', 'error');
+      return;
     }
     
     // Check if group is dynamic
@@ -3043,17 +3061,19 @@ document.addEventListener("DOMContentLoaded", () => {
   const updateClearMembersButtonState = () => {
     const clearBtn = document.getElementById('clearGroupMembers');
     
-    // Check if we have a cached group from "Check members"
-    const hasCachedGroup = state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup;
-    
-    // Check if we have a selected group from search results
     const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
-    const hasSelectedGroup = selected.length === 1;
-    
-    // Button should be enabled if we have either a cached group or a selected group
-    if (hasCachedGroup) {
-      // Check if the cached group is dynamic
-      if (isDynamicGroup(state.lastCheckedGroup.groupId)) {
+
+    // Multiple groups selected – this button requires exactly one
+    if (selected.length > 1) {
+      clearBtn.classList.add('disabled');
+      clearBtn.title = 'Select exactly one group.';
+      return;
+    }
+
+    // Single selected group takes precedence over cache
+    if (selected.length === 1) {
+      const groupId = selected[0].value;
+      if (isDynamicGroup(groupId)) {
         clearBtn.classList.add('disabled');
         clearBtn.title = 'Only available for Assigned groups. Dynamic membership cannot be manually cleared.';
       } else {
@@ -3062,10 +3082,11 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       return;
     }
-    
-    if (hasSelectedGroup) {
-      const groupId = selected[0].value;
-      if (isDynamicGroup(groupId)) {
+
+    // No selected group – fall back to cached group from "Check members"
+    const hasCachedGroup = state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup;
+    if (hasCachedGroup) {
+      if (isDynamicGroup(state.lastCheckedGroup.groupId)) {
         clearBtn.classList.add('disabled');
         clearBtn.title = 'Only available for Assigned groups. Dynamic membership cannot be manually cleared.';
       } else {
@@ -3492,22 +3513,21 @@ document.addEventListener("DOMContentLoaded", () => {
   const handleBulkAddMembers = async () => {
     logMessage("bulkAddMembers clicked");
 
-    // Determine the target group
+    // Determine the target group – selected takes precedence over cache
     let groupId, groupName;
+    const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
 
-    if (state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup) {
+    if (selected.length === 1) {
+      groupId = selected[0].value;
+      groupName = selected[0].dataset.groupName;
+      logMessage(`bulkAddMembers: Using selected group - ID: ${groupId}, Name: ${groupName}`);
+    } else if (selected.length === 0 && state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup) {
       groupId = state.lastCheckedGroup.groupId;
       groupName = state.lastCheckedGroup.groupName;
       logMessage(`bulkAddMembers: Using cached group - ID: ${groupId}, Name: ${groupName}`);
     } else {
-      const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
-      if (selected.length !== 1) {
-        showResultNotification('Select exactly one group to add members to.', 'error');
-        return;
-      }
-      groupId = selected[0].value;
-      groupName = selected[0].dataset.groupName;
-      logMessage(`bulkAddMembers: Using selected group - ID: ${groupId}, Name: ${groupName}`);
+      showResultNotification('Select exactly one group to add members to.', 'error');
+      return;
     }
 
     if (isDynamicGroup(groupId)) {
@@ -4970,22 +4990,21 @@ document.addEventListener("DOMContentLoaded", () => {
   const handleCreateDeviceGroupFromUsers = async () => {
     logMessage("createDeviceGroupFromUsers clicked");
 
-    // Determine the target group
+    // Determine the target group – selected takes precedence over cache
     let groupId, groupName;
+    const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
 
-    if (state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup) {
+    if (selected.length === 1) {
+      groupId = selected[0].value;
+      groupName = selected[0].dataset.groupName;
+      logMessage(`createDeviceGroupFromUsers: Using selected group - ID: ${groupId}, Name: ${groupName}`);
+    } else if (selected.length === 0 && state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup) {
       groupId = state.lastCheckedGroup.groupId;
       groupName = state.lastCheckedGroup.groupName;
       logMessage(`createDeviceGroupFromUsers: Using cached group - ID: ${groupId}, Name: ${groupName}`);
     } else {
-      const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
-      if (selected.length !== 1) {
-        showResultNotification('Select exactly one group to create device group from.', 'error');
-        return;
-      }
-      groupId = selected[0].value;
-      groupName = selected[0].dataset.groupName;
-      logMessage(`createDeviceGroupFromUsers: Using selected group - ID: ${groupId}, Name: ${groupName}`);
+      showResultNotification('Select exactly one group to create device group from.', 'error');
+      return;
     }
 
     createDeviceGroupState.baseGroupId = groupId;
@@ -5788,8 +5807,20 @@ document.addEventListener("DOMContentLoaded", () => {
   // Main handler for Check Intune Devices button
   const handleCheckIntuneDevices = async () => {
     logMessage("checkIntuneDevices clicked");
+
+    // Determine the target group – selected takes precedence over cache
+    let groupId, groupName;
     const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
-    if (selected.length !== 1) {
+
+    if (selected.length === 1) {
+      groupId = selected[0].value;
+      groupName = selected[0].dataset.groupName;
+      logMessage(`checkIntuneDevices: Using selected group - ID: ${groupId}, Name: ${groupName}`);
+    } else if (selected.length === 0 && state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup) {
+      groupId = state.lastCheckedGroup.groupId;
+      groupName = state.lastCheckedGroup.groupName;
+      logMessage(`checkIntuneDevices: Using cached group - ID: ${groupId}, Name: ${groupName}`);
+    } else {
       showResultNotification('Select exactly one group.', 'error');
       return;
     }
@@ -5799,9 +5830,6 @@ document.addEventListener("DOMContentLoaded", () => {
     clearColumnFilters();
 
     clearTableSelection();
-
-    const groupId = selected[0].value;
-    const groupName = selected[0].dataset.groupName;
 
     logMessage(`checkIntuneDevices: Selected group - ID: ${groupId}, Name: ${groupName}`);
 
