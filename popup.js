@@ -4288,12 +4288,10 @@ document.addEventListener("DOMContentLoaded", () => {
           if (err.message.includes('404') || err.message.includes('Not Found')) {
             logMessage(`checkCompliance: Policy "${policy.policyName}" (${policy.policyId}) not found in deviceCompliancePolicies endpoint - trying alternative approaches`);
             
-            // Try different compliance policy endpoints (legacy, Settings Catalog, device config, configuration)
+            // Try compliance-specific endpoints only (legacy single-quote format, Settings Catalog)
             const alternativeEndpoints = [
               `https://graph.microsoft.com/beta/deviceManagement/deviceCompliancePolicies('${policy.policyId}')?$expand=assignments`,
-              `https://graph.microsoft.com/beta/deviceManagement/compliancePolicies('${policy.policyId}')?$expand=assignments`,
-              `https://graph.microsoft.com/beta/deviceManagement/deviceConfigurations('${policy.policyId}')?$expand=assignments`,
-              `https://graph.microsoft.com/beta/deviceManagement/configurationPolicies('${policy.policyId}')?$expand=assignments`
+              `https://graph.microsoft.com/beta/deviceManagement/compliancePolicies('${policy.policyId}')?$expand=assignments`
             ];
             
             for (const endpoint of alternativeEndpoints) {
