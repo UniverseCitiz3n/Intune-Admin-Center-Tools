@@ -4198,7 +4198,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const userObjectId = await userPromise;
       const groupMaps = await getAllGroupsMap(deviceObjectId, userObjectId, token);
       
-      // Try a comprehensive approach: fetch all compliance policies from tenant and match them to device/user groups
+      // Fetch all compliance policies from tenant (legacy + Settings Catalog) to cross-reference with device report
       logMessage("checkCompliance: Fetching all compliance policies from tenant to cross-reference with device report");
       let tenantCompliancePolicies = [];
       try {
@@ -4207,13 +4207,25 @@ document.addEventListener("DOMContentLoaded", () => {
           headers: { "Authorization": token, "Content-Type": "application/json" }
         });
         tenantCompliancePolicies = allPoliciesData.value || [];
-        logMessage(`checkCompliance: Found ${tenantCompliancePolicies.length} compliance policies in tenant`);
+        logMessage(`checkCompliance: Found ${tenantCompliancePolicies.length} legacy compliance policies in tenant`);
       } catch (tenantErr) {
-        logMessage(`checkCompliance: Failed to fetch tenant compliance policies: ${tenantErr.message}`);
+        logMessage(`checkCompliance: Failed to fetch legacy compliance policies: ${tenantErr.message}`);
+      }
+      // Also fetch Settings Catalog compliance policies (covers newer policies across all platforms)
+      try {
+        const settingsCatalogData = await fetchJSON("https://graph.microsoft.com/beta/deviceManagement/compliancePolicies?$expand=assignments", {
+          method: "GET",
+          headers: { "Authorization": token, "Content-Type": "application/json" }
+        });
+        const settingsCatalogPolicies = settingsCatalogData.value || [];
+        logMessage(`checkCompliance: Found ${settingsCatalogPolicies.length} Settings Catalog compliance policies in tenant`);
+        tenantCompliancePolicies = [...tenantCompliancePolicies, ...settingsCatalogPolicies];
+      } catch (scErr) {
+        logMessage(`checkCompliance: Failed to fetch Settings Catalog compliance policies: ${scErr.message}`);
       }
       
       const reportBody = JSON.stringify({
-        filter: `(DeviceId eq '${mdmDeviceId}') and ((PolicyPlatformType eq '4') or (PolicyPlatformType eq '5') or (PolicyPlatformType eq '6') or (PolicyPlatformType eq '8') or (PolicyPlatformType eq '100'))`,
+        filter: `(DeviceId eq '${mdmDeviceId}')`,
         orderBy: ["PolicyName asc"]
       });
       const reportData = await fetchJSON("https://graph.microsoft.com/beta/deviceManagement/reports/getDevicePoliciesComplianceReport", {
@@ -4276,9 +4288,10 @@ document.addEventListener("DOMContentLoaded", () => {
           if (err.message.includes('404') || err.message.includes('Not Found')) {
             logMessage(`checkCompliance: Policy "${policy.policyName}" (${policy.policyId}) not found in deviceCompliancePolicies endpoint - trying alternative approaches`);
             
-            // Try different compliance policy endpoints
+            // Try different compliance policy endpoints (legacy, Settings Catalog, device config, configuration)
             const alternativeEndpoints = [
               `https://graph.microsoft.com/beta/deviceManagement/deviceCompliancePolicies('${policy.policyId}')?$expand=assignments`,
+              `https://graph.microsoft.com/beta/deviceManagement/compliancePolicies('${policy.policyId}')?$expand=assignments`,
               `https://graph.microsoft.com/beta/deviceManagement/deviceConfigurations('${policy.policyId}')?$expand=assignments`,
               `https://graph.microsoft.com/beta/deviceManagement/configurationPolicies('${policy.policyId}')?$expand=assignments`
             ];
@@ -4420,8 +4433,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // Check if this tenant policy is already in our results
         const alreadyIncluded = tableData.some(reportPolicy => 
           reportPolicy.policyName === tenantPolicy.displayName || 
-          reportPolicy.policyName === tenantPolicy.name ||
-          (reportPolicy.targets && reportPolicy.targets.length > 0 && reportPolicy.targets[0].groupName !== 'No Assignments')
+          reportPolicy.policyName === tenantPolicy.name
         );
         
         if (alreadyIncluded) {
