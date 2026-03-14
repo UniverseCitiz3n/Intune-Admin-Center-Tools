@@ -4219,7 +4219,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         const settingsCatalogPolicies = settingsCatalogData.value || [];
         logMessage(`checkCompliance: Found ${settingsCatalogPolicies.length} Settings Catalog compliance policies in tenant`);
-        tenantCompliancePolicies = [...tenantCompliancePolicies, ...settingsCatalogPolicies];
+        tenantCompliancePolicies.push(...settingsCatalogPolicies);
       } catch (scErr) {
         logMessage(`checkCompliance: Failed to fetch Settings Catalog compliance policies: ${scErr.message}`);
       }
