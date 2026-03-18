@@ -4176,6 +4176,10 @@ document.addEventListener("DOMContentLoaded", () => {
       // Update device name display
       updateDeviceNameDisplay(deviceData);
 
+      // Determine the device platform to scope compliance policy results
+      const devicePlatform = normalizePlatform(deviceData.operatingSystem, deviceData.deviceType);
+      logMessage(`checkCompliance: Device platform detected as "${devicePlatform}" (operatingSystem: "${deviceData.operatingSystem}", deviceType: "${deviceData.deviceType}")`);
+
       const azureADDeviceId = deviceData.azureADDeviceId;
       const userPrincipalName = deviceData.userPrincipalName;
       if (!azureADDeviceId) throw new Error("Could not find Azure AD Device ID for this device.");
@@ -4222,6 +4226,36 @@ document.addEventListener("DOMContentLoaded", () => {
         tenantCompliancePolicies.push(...settingsCatalogPolicies);
       } catch (scErr) {
         logMessage(`checkCompliance: Failed to fetch Settings Catalog compliance policies: ${scErr.message}`);
+      }
+
+      // Filter tenant compliance policies to only include those matching the device platform
+      if (devicePlatform) {
+        const beforeCount = tenantCompliancePolicies.length;
+        // Platform keywords for matching @odata.type (legacy) and platforms field (Settings Catalog)
+        const platformKeywords = {
+          'Windows': ['windows'],
+          'macOS': ['macos'],
+          'iOS': ['ios'],
+          'Android': ['android', 'aosp']
+        };
+        const keywords = platformKeywords[devicePlatform] || [];
+        tenantCompliancePolicies = tenantCompliancePolicies.filter(policy => {
+          const odataType = (policy['@odata.type'] || '').toLowerCase();
+          // Default compliance policy applies to all platforms
+          if (odataType.includes('defaultdevicecompliancepolicy')) return true;
+          // Legacy compliance policies: @odata.type contains platform name
+          if (odataType) {
+            return keywords.some(kw => odataType.includes(kw));
+          }
+          // Settings Catalog compliance policies: platforms field
+          if (policy.platforms) {
+            const platLower = policy.platforms.toLowerCase();
+            return keywords.some(kw => platLower.includes(kw));
+          }
+          // If we can't determine the platform, include it to be safe
+          return true;
+        });
+        logMessage(`checkCompliance: Filtered tenant policies by platform "${devicePlatform}": ${beforeCount} -> ${tenantCompliancePolicies.length}`);
       }
       
       const reportBody = JSON.stringify({
