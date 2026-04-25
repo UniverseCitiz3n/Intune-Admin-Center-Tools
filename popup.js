@@ -1262,6 +1262,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const updateActionButtonsState = () => {
     const selected = document.querySelectorAll('#groupResults input[type=checkbox]:checked');
     const hasDynamic = Array.from(selected).some(cb => isDynamicGroup(cb.value));
+    const multipleSelected = selected.length > 1;
     
     // Collect the names of dynamic groups that are selected
     const dynamicGroupNames = Array.from(selected)
@@ -1283,6 +1284,25 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.classList.remove('disabled');
         // Remove tooltip when buttons are enabled
         btn.removeAttribute('title');
+      }
+    });
+
+    // Buttons that require exactly one group – disable when multiple are selected
+    const singleGroupBtnIds = ['bulkAddMembers', 'createDeviceGroupFromUsers', 'checkIntuneDevices'];
+    const checkIntuneDefaultTitle = 'Shows Intune-managed devices related to members of this group (users → UPN, devices → Entra device id).';
+    singleGroupBtnIds.forEach(id => {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      if (multipleSelected) {
+        btn.classList.add('disabled');
+        btn.title = 'Select exactly one group.';
+      } else {
+        btn.classList.remove('disabled');
+        if (id === 'checkIntuneDevices') {
+          btn.title = checkIntuneDefaultTitle;
+        } else {
+          btn.removeAttribute('title');
+        }
       }
     });
     
@@ -2961,24 +2981,22 @@ document.addEventListener("DOMContentLoaded", () => {
   const handleClearGroupMembers = async () => {
     logMessage("clearGroupMembers clicked");
     
-    // Try to use cached group info if we're viewing group members
+    // Determine the target group – selected takes precedence over cache
     let groupId, groupName;
-    
-    if (state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup) {
-      // Use cached group info from "Check members"
+    const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
+
+    if (selected.length === 1) {
+      groupId = selected[0].value;
+      groupName = selected[0].dataset.groupName;
+      logMessage(`clearGroupMembers: Using selected group - ID: ${groupId}, Name: ${groupName}`);
+    } else if (selected.length === 0 && state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup) {
+      // Fall back to cached group info from "Check members"
       groupId = state.lastCheckedGroup.groupId;
       groupName = state.lastCheckedGroup.groupName;
       logMessage(`clearGroupMembers: Using cached group - ID: ${groupId}, Name: ${groupName}`);
     } else {
-      // Fall back to requiring selected group from search results
-      const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
-      if (selected.length !== 1) {
-        showResultNotification('Select exactly one group to clear members.', 'error');
-        return;
-      }
-      groupId = selected[0].value;
-      groupName = selected[0].dataset.groupName;
-      logMessage(`clearGroupMembers: Using selected group - ID: ${groupId}, Name: ${groupName}`);
+      showResultNotification('Select exactly one group to clear members.', 'error');
+      return;
     }
     
     // Check if group is dynamic
@@ -3043,17 +3061,19 @@ document.addEventListener("DOMContentLoaded", () => {
   const updateClearMembersButtonState = () => {
     const clearBtn = document.getElementById('clearGroupMembers');
     
-    // Check if we have a cached group from "Check members"
-    const hasCachedGroup = state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup;
-    
-    // Check if we have a selected group from search results
     const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
-    const hasSelectedGroup = selected.length === 1;
-    
-    // Button should be enabled if we have either a cached group or a selected group
-    if (hasCachedGroup) {
-      // Check if the cached group is dynamic
-      if (isDynamicGroup(state.lastCheckedGroup.groupId)) {
+
+    // Multiple groups selected – this button requires exactly one
+    if (selected.length > 1) {
+      clearBtn.classList.add('disabled');
+      clearBtn.title = 'Select exactly one group.';
+      return;
+    }
+
+    // Single selected group takes precedence over cache
+    if (selected.length === 1) {
+      const groupId = selected[0].value;
+      if (isDynamicGroup(groupId)) {
         clearBtn.classList.add('disabled');
         clearBtn.title = 'Only available for Assigned groups. Dynamic membership cannot be manually cleared.';
       } else {
@@ -3062,10 +3082,11 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       return;
     }
-    
-    if (hasSelectedGroup) {
-      const groupId = selected[0].value;
-      if (isDynamicGroup(groupId)) {
+
+    // No selected group – fall back to cached group from "Check members"
+    const hasCachedGroup = state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup;
+    if (hasCachedGroup) {
+      if (isDynamicGroup(state.lastCheckedGroup.groupId)) {
         clearBtn.classList.add('disabled');
         clearBtn.title = 'Only available for Assigned groups. Dynamic membership cannot be manually cleared.';
       } else {
@@ -3492,22 +3513,21 @@ document.addEventListener("DOMContentLoaded", () => {
   const handleBulkAddMembers = async () => {
     logMessage("bulkAddMembers clicked");
 
-    // Determine the target group
+    // Determine the target group – selected takes precedence over cache
     let groupId, groupName;
+    const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
 
-    if (state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup) {
+    if (selected.length === 1) {
+      groupId = selected[0].value;
+      groupName = selected[0].dataset.groupName;
+      logMessage(`bulkAddMembers: Using selected group - ID: ${groupId}, Name: ${groupName}`);
+    } else if (selected.length === 0 && state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup) {
       groupId = state.lastCheckedGroup.groupId;
       groupName = state.lastCheckedGroup.groupName;
       logMessage(`bulkAddMembers: Using cached group - ID: ${groupId}, Name: ${groupName}`);
     } else {
-      const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
-      if (selected.length !== 1) {
-        showResultNotification('Select exactly one group to add members to.', 'error');
-        return;
-      }
-      groupId = selected[0].value;
-      groupName = selected[0].dataset.groupName;
-      logMessage(`bulkAddMembers: Using selected group - ID: ${groupId}, Name: ${groupName}`);
+      showResultNotification('Select exactly one group to add members to.', 'error');
+      return;
     }
 
     if (isDynamicGroup(groupId)) {
@@ -4156,6 +4176,10 @@ document.addEventListener("DOMContentLoaded", () => {
       // Update device name display
       updateDeviceNameDisplay(deviceData);
 
+      // Determine the device platform to scope compliance policy results
+      const devicePlatform = normalizePlatform(deviceData.operatingSystem, deviceData.deviceType);
+      logMessage(`checkCompliance: Device platform detected as "${devicePlatform}" (operatingSystem: "${deviceData.operatingSystem}", deviceType: "${deviceData.deviceType}")`);
+
       const azureADDeviceId = deviceData.azureADDeviceId;
       const userPrincipalName = deviceData.userPrincipalName;
       if (!azureADDeviceId) throw new Error("Could not find Azure AD Device ID for this device.");
@@ -4178,7 +4202,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const userObjectId = await userPromise;
       const groupMaps = await getAllGroupsMap(deviceObjectId, userObjectId, token);
       
-      // Try a comprehensive approach: fetch all compliance policies from tenant and match them to device/user groups
+      // Fetch all compliance policies from tenant (legacy + Settings Catalog) to cross-reference with device report
       logMessage("checkCompliance: Fetching all compliance policies from tenant to cross-reference with device report");
       let tenantCompliancePolicies = [];
       try {
@@ -4187,13 +4211,55 @@ document.addEventListener("DOMContentLoaded", () => {
           headers: { "Authorization": token, "Content-Type": "application/json" }
         });
         tenantCompliancePolicies = allPoliciesData.value || [];
-        logMessage(`checkCompliance: Found ${tenantCompliancePolicies.length} compliance policies in tenant`);
+        logMessage(`checkCompliance: Found ${tenantCompliancePolicies.length} legacy compliance policies in tenant`);
       } catch (tenantErr) {
-        logMessage(`checkCompliance: Failed to fetch tenant compliance policies: ${tenantErr.message}`);
+        logMessage(`checkCompliance: Failed to fetch legacy compliance policies: ${tenantErr.message}`);
+      }
+      // Also fetch Settings Catalog compliance policies (covers newer policies across all platforms)
+      try {
+        const settingsCatalogData = await fetchJSON("https://graph.microsoft.com/beta/deviceManagement/compliancePolicies?$expand=assignments", {
+          method: "GET",
+          headers: { "Authorization": token, "Content-Type": "application/json" }
+        });
+        const settingsCatalogPolicies = settingsCatalogData.value || [];
+        logMessage(`checkCompliance: Found ${settingsCatalogPolicies.length} Settings Catalog compliance policies in tenant`);
+        tenantCompliancePolicies.push(...settingsCatalogPolicies);
+      } catch (scErr) {
+        logMessage(`checkCompliance: Failed to fetch Settings Catalog compliance policies: ${scErr.message}`);
+      }
+
+      // Filter tenant compliance policies to only include those matching the device platform
+      if (devicePlatform) {
+        const beforeCount = tenantCompliancePolicies.length;
+        // Platform keywords for matching @odata.type (legacy) and platforms field (Settings Catalog)
+        const platformKeywords = {
+          'Windows': ['windows'],
+          'macOS': ['macos'],
+          'iOS': ['ios'],
+          'Android': ['android', 'aosp']
+        };
+        const keywords = platformKeywords[devicePlatform] || [];
+        tenantCompliancePolicies = tenantCompliancePolicies.filter(policy => {
+          const odataType = (policy['@odata.type'] || '').toLowerCase();
+          // Default compliance policy applies to all platforms
+          if (odataType.includes('defaultdevicecompliancepolicy')) return true;
+          // Legacy compliance policies: @odata.type contains platform name
+          if (odataType) {
+            return keywords.some(kw => odataType.includes(kw));
+          }
+          // Settings Catalog compliance policies: platforms field
+          if (policy.platforms) {
+            const platLower = policy.platforms.toLowerCase();
+            return keywords.some(kw => platLower.includes(kw));
+          }
+          // If we can't determine the platform, include it to be safe
+          return true;
+        });
+        logMessage(`checkCompliance: Filtered tenant policies by platform "${devicePlatform}": ${beforeCount} -> ${tenantCompliancePolicies.length}`);
       }
       
       const reportBody = JSON.stringify({
-        filter: `(DeviceId eq '${mdmDeviceId}') and ((PolicyPlatformType eq '4') or (PolicyPlatformType eq '5') or (PolicyPlatformType eq '6') or (PolicyPlatformType eq '8') or (PolicyPlatformType eq '100'))`,
+        filter: `(DeviceId eq '${mdmDeviceId}')`,
         orderBy: ["PolicyName asc"]
       });
       const reportData = await fetchJSON("https://graph.microsoft.com/beta/deviceManagement/reports/getDevicePoliciesComplianceReport", {
@@ -4256,11 +4322,10 @@ document.addEventListener("DOMContentLoaded", () => {
           if (err.message.includes('404') || err.message.includes('Not Found')) {
             logMessage(`checkCompliance: Policy "${policy.policyName}" (${policy.policyId}) not found in deviceCompliancePolicies endpoint - trying alternative approaches`);
             
-            // Try different compliance policy endpoints
+            // Try compliance-specific endpoints only (legacy single-quote format, Settings Catalog)
             const alternativeEndpoints = [
               `https://graph.microsoft.com/beta/deviceManagement/deviceCompliancePolicies('${policy.policyId}')?$expand=assignments`,
-              `https://graph.microsoft.com/beta/deviceManagement/deviceConfigurations('${policy.policyId}')?$expand=assignments`,
-              `https://graph.microsoft.com/beta/deviceManagement/configurationPolicies('${policy.policyId}')?$expand=assignments`
+              `https://graph.microsoft.com/beta/deviceManagement/compliancePolicies('${policy.policyId}')?$expand=assignments`
             ];
             
             for (const endpoint of alternativeEndpoints) {
@@ -4400,8 +4465,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // Check if this tenant policy is already in our results
         const alreadyIncluded = tableData.some(reportPolicy => 
           reportPolicy.policyName === tenantPolicy.displayName || 
-          reportPolicy.policyName === tenantPolicy.name ||
-          (reportPolicy.targets && reportPolicy.targets.length > 0 && reportPolicy.targets[0].groupName !== 'No Assignments')
+          reportPolicy.policyName === tenantPolicy.name
         );
         
         if (alreadyIncluded) {
@@ -4970,22 +5034,21 @@ document.addEventListener("DOMContentLoaded", () => {
   const handleCreateDeviceGroupFromUsers = async () => {
     logMessage("createDeviceGroupFromUsers clicked");
 
-    // Determine the target group
+    // Determine the target group – selected takes precedence over cache
     let groupId, groupName;
+    const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
 
-    if (state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup) {
+    if (selected.length === 1) {
+      groupId = selected[0].value;
+      groupName = selected[0].dataset.groupName;
+      logMessage(`createDeviceGroupFromUsers: Using selected group - ID: ${groupId}, Name: ${groupName}`);
+    } else if (selected.length === 0 && state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup) {
       groupId = state.lastCheckedGroup.groupId;
       groupName = state.lastCheckedGroup.groupName;
       logMessage(`createDeviceGroupFromUsers: Using cached group - ID: ${groupId}, Name: ${groupName}`);
     } else {
-      const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
-      if (selected.length !== 1) {
-        showResultNotification('Select exactly one group to create device group from.', 'error');
-        return;
-      }
-      groupId = selected[0].value;
-      groupName = selected[0].dataset.groupName;
-      logMessage(`createDeviceGroupFromUsers: Using selected group - ID: ${groupId}, Name: ${groupName}`);
+      showResultNotification('Select exactly one group to create device group from.', 'error');
+      return;
     }
 
     createDeviceGroupState.baseGroupId = groupId;
@@ -5788,8 +5851,20 @@ document.addEventListener("DOMContentLoaded", () => {
   // Main handler for Check Intune Devices button
   const handleCheckIntuneDevices = async () => {
     logMessage("checkIntuneDevices clicked");
+
+    // Determine the target group – selected takes precedence over cache
+    let groupId, groupName;
     const selected = document.querySelectorAll("#groupResults input[type=checkbox]:checked");
-    if (selected.length !== 1) {
+
+    if (selected.length === 1) {
+      groupId = selected[0].value;
+      groupName = selected[0].dataset.groupName;
+      logMessage(`checkIntuneDevices: Using selected group - ID: ${groupId}, Name: ${groupName}`);
+    } else if (selected.length === 0 && state.currentDisplayType === 'groupMembers' && state.lastCheckedGroup) {
+      groupId = state.lastCheckedGroup.groupId;
+      groupName = state.lastCheckedGroup.groupName;
+      logMessage(`checkIntuneDevices: Using cached group - ID: ${groupId}, Name: ${groupName}`);
+    } else {
       showResultNotification('Select exactly one group.', 'error');
       return;
     }
@@ -5799,9 +5874,6 @@ document.addEventListener("DOMContentLoaded", () => {
     clearColumnFilters();
 
     clearTableSelection();
-
-    const groupId = selected[0].value;
-    const groupName = selected[0].dataset.groupName;
 
     logMessage(`checkIntuneDevices: Selected group - ID: ${groupId}, Name: ${groupName}`);
 
