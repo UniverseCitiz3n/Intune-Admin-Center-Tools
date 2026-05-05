@@ -6673,6 +6673,21 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Settings menu options
+  // Copy auth token option
+  document.getElementById("copyAuthTokenOption").addEventListener("click", async (e) => {
+    e.preventDefault();
+    settingsDropdown.classList.remove("show");
+    try {
+      const token = await getToken();
+      await navigator.clipboard.writeText(token);
+      showResultNotification('Auth token copied to clipboard', 'success');
+      logMessage('Auth token copied to clipboard via settings menu');
+    } catch (err) {
+      showResultNotification(err.message || 'Failed to copy auth token', 'error');
+      logMessage('Failed to copy auth token: ' + err.message);
+    }
+  });
+
   document.getElementById("showWelcomeOption").addEventListener("click", (e) => {
     e.preventDefault();
     settingsDropdown.classList.remove("show");
