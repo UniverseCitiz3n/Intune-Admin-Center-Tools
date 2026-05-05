@@ -12,7 +12,7 @@ function verifyMdmUrl() {
       logMessage(`Active tab URL: ${sanitizedUrl}`);
       const mdmMatch = url.match(/(?:mdmDeviceId|managedDeviceId)\/([\w-]+)/i);
       if (!mdmMatch) {
-        const error = 'mdmDeviceId not found in URL.';
+        const error = 'mdmDeviceId or managedDeviceId not found in URL.';
         logMessage(error);
         showNotification(error, 'error');
         return reject(new Error(error));
