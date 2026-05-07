@@ -936,9 +936,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const url = tabs[0].url;
         const sanitizedUrl = url.replace(/\/[\w-]+(?=\/|$)/g, '/[REDACTED]');
         logMessage(`Active tab URL: ${sanitizedUrl}`);
-        const mdmMatch = url.match(/mdmDeviceId\/([\w-]+)/i);
+        const mdmMatch = url.match(/(?:mdmDeviceId|managedDeviceId)\/([\w-]+)/i);
         if (!mdmMatch) {
-          const error = 'mdmDeviceId not found in URL.';
+          const error = 'mdmDeviceId or managedDeviceId not found in URL.';
           logMessage(error);
           showResultNotification(error, 'error');
           return reject(new Error(error));
