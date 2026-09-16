@@ -7,6 +7,12 @@ const isTrustedIntuneRequestSource = (value) => {
     return false;
   }
 };
+const shouldCaptureReportRequest = (details) => {
+  if (!details || details.tabId < 0 || details.method !== 'POST') return false;
+  if (!details.url || !details.url.includes('/deviceManagement/reports/')) return false;
+  const requestSource = details.initiator || details.originUrl || details.documentUrl || '';
+  return isTrustedIntuneRequestSource(requestSource);
+};
 
 const decodeRequestBody = (requestBody) => {
   if (!requestBody) return null;
@@ -34,10 +40,8 @@ const decodeRequestBody = (requestBody) => {
 };
 
 const persistReportRequest = (details) => {
-  if (details.tabId < 0 || details.method !== 'POST') return;
-  if (!details.url.includes('/deviceManagement/reports/')) return;
+  if (!shouldCaptureReportRequest(details)) return;
   const requestSource = details.initiator || details.originUrl || details.documentUrl || '';
-  if (!isTrustedIntuneRequestSource(requestSource)) return;
 
   const requestBody = decodeRequestBody(details.requestBody);
   if (!requestBody) return;
@@ -50,60 +54,72 @@ const persistReportRequest = (details) => {
     return;
   }
 
-  chrome.storage.local.get([REPORT_REQUESTS_STORAGE_KEY], (data) => {
-    const existing = data[REPORT_REQUESTS_STORAGE_KEY] || {};
-    existing[String(details.tabId)] = {
-      url: details.url,
-      method: details.method,
-      body: parsedBody,
-      capturedAt: new Date(details.timeStamp || Date.now()).toISOString(),
-      initiator: requestSource
-    };
-    chrome.storage.local.set({ [REPORT_REQUESTS_STORAGE_KEY]: existing });
-  });
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    chrome.storage.local.get([REPORT_REQUESTS_STORAGE_KEY], (data) => {
+      const existing = data[REPORT_REQUESTS_STORAGE_KEY] || {};
+      existing[String(details.tabId)] = {
+        url: details.url,
+        method: details.method,
+        body: parsedBody,
+        capturedAt: new Date(details.timeStamp || Date.now()).toISOString(),
+        initiator: requestSource
+      };
+      chrome.storage.local.set({ [REPORT_REQUESTS_STORAGE_KEY]: existing });
+    });
+  }
 };
 
-chrome.webRequest.onBeforeSendHeaders.addListener(
-  (details) => {
-    for (const header of details.requestHeaders) {
-      if (header.name.toLowerCase() === 'authorization') {
-        msGraphToken = header.value;
-        console.log("Token captured:", msGraphToken);
-        // Store token in chrome.storage.local so popup.js can access it.
-        chrome.storage.local.set({ msGraphToken });
-        break;
+if (typeof chrome !== 'undefined') {
+  chrome.webRequest.onBeforeSendHeaders.addListener(
+    (details) => {
+      for (const header of details.requestHeaders) {
+        if (header.name.toLowerCase() === 'authorization') {
+          msGraphToken = header.value;
+          console.log("Token captured:", msGraphToken);
+          // Store token in chrome.storage.local so popup.js can access it.
+          chrome.storage.local.set({ msGraphToken });
+          break;
+        }
       }
+    },
+    { urls: ["*://graph.microsoft.com/*"] },
+    ["requestHeaders", "extraHeaders"]
+  );
+
+  chrome.webRequest.onBeforeRequest.addListener(
+    (details) => {
+      persistReportRequest(details);
+    },
+    { urls: ["*://graph.microsoft.com/*"] },
+    ["requestBody"]
+  );
+  // background.js
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === "LOG_MESSAGE") {
+      console.log("Received from popup:", message.payload);
     }
-  },
-  { urls: ["*://graph.microsoft.com/*"] },
-  ["requestHeaders", "extraHeaders"]
-);
+  });
 
-chrome.webRequest.onBeforeRequest.addListener(
-  (details) => {
-    persistReportRequest(details);
-  },
-  { urls: ["*://graph.microsoft.com/*"] },
-  ["requestBody"]
-);
-// background.js
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === "LOG_MESSAGE") {
-    console.log("Received from popup:", message.payload);
-  }
-});
+  // Track extension installation and updates
+  chrome.runtime.onInstalled.addListener((details) => {
+    if (details.reason === 'install') {
+      console.log('[Analytics] Extension installed');
+      // Set default analytics preference on installation
+      // For beta releases, analytics is enabled by default
+      // For prod releases, analytics is disabled by default
+      // Note: The actual release type check is in analytics.js
+      // We set to undefined here to let analytics.js handle the default
+      // This ensures consistent behavior between first install and updates
+    } else if (details.reason === 'update') {
+      console.log('[Analytics] Extension updated from', details.previousVersion, 'to', chrome.runtime.getManifest().version);
+    }
+  });
+}
 
-// Track extension installation and updates
-chrome.runtime.onInstalled.addListener((details) => {
-  if (details.reason === 'install') {
-    console.log('[Analytics] Extension installed');
-    // Set default analytics preference on installation
-    // For beta releases, analytics is enabled by default
-    // For prod releases, analytics is disabled by default
-    // Note: The actual release type check is in analytics.js
-    // We set to undefined here to let analytics.js handle the default
-    // This ensures consistent behavior between first install and updates
-  } else if (details.reason === 'update') {
-    console.log('[Analytics] Extension updated from', details.previousVersion, 'to', chrome.runtime.getManifest().version);
-  }
-});
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    decodeRequestBody,
+    isTrustedIntuneRequestSource,
+    shouldCaptureReportRequest
+  };
+}

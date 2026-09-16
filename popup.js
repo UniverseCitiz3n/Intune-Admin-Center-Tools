@@ -1167,10 +1167,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const unresolved = [];
     const seen = new Set();
     const azureDeviceIds = [];
+    const seenAzureDeviceIds = new Set();
 
     rows.forEach((row) => {
       const azureDeviceId = getReportCellValue(row, schemaMap, ['AadDeviceId', 'AzureAdDeviceId', 'azureADDeviceId']);
-      if (azureDeviceId && !isZeroGuid(azureDeviceId) && !azureDeviceIds.includes(azureDeviceId)) {
+      if (azureDeviceId && !isZeroGuid(azureDeviceId) && !seenAzureDeviceIds.has(azureDeviceId)) {
+        seenAzureDeviceIds.add(azureDeviceId);
         azureDeviceIds.push(azureDeviceId);
       }
     });
@@ -1229,22 +1231,30 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const getDirectoryObjectsFromCurrentReport = async (token, mode) => {
     const reportRequest = await getCapturedReportRequestForActiveTab();
-    if (!reportRequest) return null;
+    if (!reportRequest) {
+      return { status: 'missing' };
+    }
 
     const reportData = await fetchAllReportRows(reportRequest, token);
     if (!reportData || !reportData.schema) {
-      return null;
+      return { status: 'missing' };
     }
 
     const schemaMap = buildSchemaMap(reportData.schema);
     if (!reportSupportsMode(schemaMap, mode)) {
-      return null;
+      return {
+        status: 'incompatible',
+        reportRequest,
+        totalRows: reportData.totalRowCount,
+        availableColumns: Object.keys(schemaMap)
+      };
     }
 
     const resolver = mode === 'device' ? resolveReportDevices : resolveReportUsers;
     const results = await resolver(reportData.rows, schemaMap, token);
 
     return {
+      status: 'ready',
       reportRequest,
       totalRows: reportData.totalRowCount,
       resolved: results.resolved,
@@ -1264,7 +1274,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
 
-    for (const groupName of allSelected.tableSelections) {
+    const resolvedGroups = await Promise.all(allSelected.tableSelections.map(async (groupName) => {
       try {
         const filter = encodeODataFilter(`displayName eq '${escapeODataString(groupName)}'`);
         const groupData = await fetchJSON(`https://graph.microsoft.com/v1.0/groups?$filter=${filter}&$select=id,displayName`, {
@@ -1273,21 +1283,32 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         if (groupData.value && groupData.value.length > 0) {
-          const groupId = groupData.value[0].id;
-          if (!seenGroupIds.has(groupId)) {
-            seenGroupIds.add(groupId);
-            groups.push({
-              id: groupId,
-              name: groupData.value[0].displayName || groupName
-            });
-          }
-        } else {
-          unresolved.push({ groupName, reason: 'Group not found' });
+          return {
+            groupName,
+            id: groupData.value[0].id,
+            name: groupData.value[0].displayName || groupName
+          };
         }
+        return { groupName, reason: 'Group not found' };
       } catch (error) {
-        unresolved.push({ groupName, reason: error.message });
+        return { groupName, reason: error.message };
       }
-    }
+    }));
+
+    resolvedGroups.forEach((group) => {
+      if (!group.id) {
+        unresolved.push({ groupName: group.groupName, reason: group.reason });
+        return;
+      }
+
+      if (!seenGroupIds.has(group.id)) {
+        seenGroupIds.add(group.id);
+        groups.push({
+          id: group.id,
+          name: group.name
+        });
+      }
+    });
 
     return { groups, unresolved };
   };
@@ -2298,8 +2319,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const targetType = state.targetMode === 'device' ? 'device' : 'user';
     const reportObjects = await getDirectoryObjectsFromCurrentReport(token, state.targetMode);
 
-    if (!reportObjects) {
+    if (!reportObjects || reportObjects.status === 'missing') {
       return false;
+    }
+
+    if (reportObjects.status === 'incompatible') {
+      throw new Error(`The current report does not expose ${targetType} columns for Add in ${targetType} mode.`);
     }
 
     if (reportObjects.resolved.length === 0) {
