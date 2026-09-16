@@ -1007,13 +1007,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const isDeviceContextUrl = (url) => /(?:mdmDeviceId|managedDeviceId)\//i.test(url || '');
 
+  const normalizeIntunePageContext = (url) => {
+    try {
+      const parsed = new URL(url);
+      const normalizedHash = (parsed.hash || '').split('?')[0].replace(/\/+$/, '');
+      return `${parsed.origin}${parsed.pathname}${normalizedHash}`;
+    } catch (error) {
+      return url || '';
+    }
+  };
+
   const isSupportedReportAddContext = (activeTabUrl, reportRequest) => {
     if (!reportRequest || isDeviceContextUrl(activeTabUrl)) {
       return false;
     }
 
     if (reportRequest.documentUrl) {
-      return reportRequest.documentUrl === activeTabUrl;
+      return normalizeIntunePageContext(reportRequest.documentUrl) === normalizeIntunePageContext(activeTabUrl);
     }
 
     return true;
@@ -1085,12 +1095,14 @@ document.addEventListener("DOMContentLoaded", () => {
     let schema = null;
     let totalRowCount = 0;
     let skip = 0;
+    const requestedTop = Number(baseBody.top);
+    const effectivePageSize = Number.isFinite(requestedTop) && requestedTop > 0 ? requestedTop : REPORT_PAGE_SIZE;
 
     while (true) {
       const requestBody = {
         ...baseBody,
         skip: coercePagingValue(baseBody.skip, skip),
-        top: coercePagingValue(baseBody.top, REPORT_PAGE_SIZE)
+        top: coercePagingValue(baseBody.top, effectivePageSize)
       };
 
       const response = await fetchJSON(reportRequest.url, {
@@ -1108,7 +1120,7 @@ document.addEventListener("DOMContentLoaded", () => {
       rows.push(...response.Values);
 
       if (response.Values.length === 0) break;
-      if (response.Values.length < REPORT_PAGE_SIZE) break;
+      if (response.Values.length < effectivePageSize) break;
       if (totalRowCount && rows.length >= totalRowCount) break;
 
       skip += response.Values.length;

@@ -48,6 +48,20 @@ test('identifies capture-worthy Intune report requests', () => {
     url: 'https://graph.microsoft.com/beta/deviceManagement/reports/getDeviceStatusByCompliacePolicyReport',
     initiator: 'https://intune.microsoft.com.evil.example'
   }), false);
+
+  assert.equal(shouldCaptureReportRequest({
+    tabId: 5,
+    method: 'POST',
+    url: 'https://graph.microsoft.com/beta/deviceManagement/reports/getDeviceStatusByCompliacePolicyReport',
+    originUrl: 'https://intune.microsoft.com'
+  }), true);
+
+  assert.equal(shouldCaptureReportRequest({
+    tabId: 5,
+    method: 'POST',
+    url: 'https://graph.microsoft.com/beta/deviceManagement/reports/getDeviceStatusByCompliacePolicyReport',
+    documentUrl: 'https://intune.microsoft.com/#view/foo'
+  }), true);
 });
 
 test('decodes raw JSON request bodies', () => {
@@ -60,4 +74,22 @@ test('decodes raw JSON request bodies', () => {
   };
 
   assert.equal(decodeRequestBody(requestBody), '{"filter":"PolicyStatus eq 4"}');
+});
+
+test('decodes multipart raw bodies and form data payloads', () => {
+  const multipartBody = {
+    raw: [
+      { bytes: new TextEncoder().encode('{"filter":"Policy').buffer },
+      { bytes: new TextEncoder().encode('Status eq 4"}').buffer }
+    ]
+  };
+  const formDataBody = {
+    formData: {
+      filter: ['PolicyStatus eq 4'],
+      top: ['50']
+    }
+  };
+
+  assert.equal(decodeRequestBody(multipartBody), '{"filter":"PolicyStatus eq 4"}');
+  assert.equal(decodeRequestBody(formDataBody), JSON.stringify(formDataBody.formData));
 });
