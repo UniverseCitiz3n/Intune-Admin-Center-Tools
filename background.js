@@ -1,4 +1,60 @@
 let msGraphToken = null;
+const REPORT_REQUESTS_STORAGE_KEY = 'lastCapturedReportRequests';
+
+const decodeRequestBody = (requestBody) => {
+  if (!requestBody) return null;
+
+  if (requestBody.raw && requestBody.raw.length > 0) {
+    const combinedLength = requestBody.raw.reduce((total, part) => total + (part.bytes ? part.bytes.byteLength : 0), 0);
+    const combined = new Uint8Array(combinedLength);
+    let offset = 0;
+
+    requestBody.raw.forEach(part => {
+      if (!part.bytes) return;
+      const bytes = new Uint8Array(part.bytes);
+      combined.set(bytes, offset);
+      offset += bytes.byteLength;
+    });
+
+    return new TextDecoder().decode(combined);
+  }
+
+  if (requestBody.formData) {
+    return JSON.stringify(requestBody.formData);
+  }
+
+  return null;
+};
+
+const persistReportRequest = (details) => {
+  if (details.tabId < 0 || details.method !== 'POST') return;
+  if (!details.url.includes('/deviceManagement/reports/')) return;
+  const requestSource = details.initiator || details.originUrl || details.documentUrl || '';
+  if (!requestSource.startsWith('https://intune.microsoft.com')) return;
+
+  const requestBody = decodeRequestBody(details.requestBody);
+  if (!requestBody) return;
+
+  let parsedBody;
+  try {
+    parsedBody = JSON.parse(requestBody);
+  } catch (error) {
+    console.log('Skipping non-JSON report request body:', error.message);
+    return;
+  }
+
+  chrome.storage.local.get([REPORT_REQUESTS_STORAGE_KEY], (data) => {
+    const existing = data[REPORT_REQUESTS_STORAGE_KEY] || {};
+    existing[String(details.tabId)] = {
+      url: details.url,
+      method: details.method,
+      body: parsedBody,
+      capturedAt: new Date(details.timeStamp || Date.now()).toISOString(),
+      initiator: requestSource
+    };
+    chrome.storage.local.set({ [REPORT_REQUESTS_STORAGE_KEY]: existing });
+  });
+};
 
 chrome.webRequest.onBeforeSendHeaders.addListener(
   (details) => {
@@ -14,6 +70,14 @@ chrome.webRequest.onBeforeSendHeaders.addListener(
   },
   { urls: ["*://graph.microsoft.com/*"] },
   ["requestHeaders", "extraHeaders"]
+);
+
+chrome.webRequest.onBeforeRequest.addListener(
+  (details) => {
+    persistReportRequest(details);
+  },
+  { urls: ["*://graph.microsoft.com/*"] },
+  ["requestBody"]
 );
 // background.js
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

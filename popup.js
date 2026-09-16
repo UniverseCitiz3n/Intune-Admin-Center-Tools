@@ -962,7 +962,334 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       });
     });  
-  };  // getAllGroupsMap: Get groups map (device & user) for lookups, with dynamic group tracking
+  };
+
+  const REPORT_REQUESTS_STORAGE_KEY = 'lastCapturedReportRequests';
+  const REPORT_REQUEST_MAX_AGE_MS = 30 * 60 * 1000;
+  const REPORT_PAGE_SIZE = 200;
+
+  const getActiveTab = async () => {
+    return new Promise((resolve, reject) => {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (!tabs || !tabs[0]) {
+          reject(new Error('No active tab found.'));
+          return;
+        }
+        resolve(tabs[0]);
+      });
+    });
+  };
+
+  const getCapturedReportRequestForActiveTab = async () => {
+    const activeTab = await getActiveTab();
+    const tabId = activeTab.id;
+    if (typeof tabId !== 'number') return null;
+
+    return new Promise((resolve) => {
+      chrome.storage.local.get([REPORT_REQUESTS_STORAGE_KEY], (data) => {
+        const requests = data[REPORT_REQUESTS_STORAGE_KEY] || {};
+        const reportRequest = requests[String(tabId)];
+        if (!reportRequest || !reportRequest.capturedAt) {
+          resolve(null);
+          return;
+        }
+
+        const capturedAt = new Date(reportRequest.capturedAt).getTime();
+        if (!capturedAt || (Date.now() - capturedAt) > REPORT_REQUEST_MAX_AGE_MS) {
+          resolve(null);
+          return;
+        }
+
+        resolve(reportRequest);
+      });
+    });
+  };
+
+  const cloneJSON = (value) => JSON.parse(JSON.stringify(value));
+
+  const coercePagingValue = (sourceValue, nextValue) => (
+    typeof sourceValue === 'string' ? String(nextValue) : nextValue
+  );
+
+  const buildSchemaMap = (schema) => {
+    const schemaMap = {};
+    (schema || []).forEach((column, index) => {
+      if (column && column.Column) {
+        schemaMap[column.Column] = index;
+      }
+    });
+    return schemaMap;
+  };
+
+  const getReportCellValue = (row, schemaMap, columnNames) => {
+    for (const columnName of columnNames) {
+      const index = schemaMap[columnName];
+      if (index === undefined) continue;
+      const value = row[index];
+      if (value === undefined || value === null) continue;
+      if (typeof value === 'string' && !value.trim()) continue;
+      return value;
+    }
+    return null;
+  };
+
+  const isZeroGuid = (value) => (
+    typeof value === 'string' && value.toLowerCase() === '00000000-0000-0000-0000-000000000000'
+  );
+
+  const reportSupportsMode = (schemaMap, mode) => {
+    const deviceColumns = ['DeviceId', 'ManagedDeviceId', 'AadDeviceId', 'AzureAdDeviceId', 'DeviceName'];
+    const userColumns = ['UserId', 'UPN', 'UserPrincipalName', 'UserName'];
+    const requiredColumns = mode === 'device' ? deviceColumns : userColumns;
+    return requiredColumns.some((column) => schemaMap[column] !== undefined);
+  };
+
+  const fetchAllReportRows = async (reportRequest, token) => {
+    if (!reportRequest || !reportRequest.url || !reportRequest.body) {
+      return null;
+    }
+
+    const baseBody = cloneJSON(reportRequest.body);
+    const rows = [];
+    let schema = null;
+    let totalRowCount = 0;
+    let skip = 0;
+
+    while (true) {
+      const requestBody = {
+        ...baseBody,
+        skip: coercePagingValue(baseBody.skip, skip),
+        top: coercePagingValue(baseBody.top, REPORT_PAGE_SIZE)
+      };
+
+      const response = await fetchJSON(reportRequest.url, {
+        method: 'POST',
+        headers: { 'Authorization': token, 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response || !Array.isArray(response.Schema) || !Array.isArray(response.Values)) {
+        throw new Error('Current report could not be replayed.');
+      }
+
+      schema = schema || response.Schema;
+      totalRowCount = Number(response.TotalRowCount) || totalRowCount;
+      rows.push(...response.Values);
+
+      if (response.Values.length === 0) break;
+      if (response.Values.length < REPORT_PAGE_SIZE) break;
+      if (totalRowCount && rows.length >= totalRowCount) break;
+
+      skip += response.Values.length;
+    }
+
+    return { schema, rows, totalRowCount: totalRowCount || rows.length };
+  };
+
+  const resolveDeviceDirectoryObjectsByAzureIds = async (azureDeviceIds, token) => {
+    const resolved = new Map();
+    const batchSize = 20;
+
+    for (let i = 0; i < azureDeviceIds.length; i += batchSize) {
+      const batch = azureDeviceIds.slice(i, i + batchSize);
+      const requests = batch.map((azureDeviceId, index) => {
+        const escapedDeviceId = azureDeviceId.replace(/'/g, "''");
+        const filter = encodeURIComponent(`deviceId eq '${escapedDeviceId}'`);
+        return {
+          id: String(index),
+          method: 'GET',
+          url: `/devices?$filter=${filter}&$select=id,displayName`
+        };
+      });
+
+      try {
+        const batchResponse = await fetchJSON('https://graph.microsoft.com/v1.0/$batch', {
+          method: 'POST',
+          headers: { 'Authorization': token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requests })
+        });
+
+        (batchResponse.responses || []).forEach((response) => {
+          const requestIndex = Number(response.id);
+          const azureDeviceId = batch[requestIndex];
+          const device = response.body?.value?.[0];
+          if (azureDeviceId && device && device.id) {
+            resolved.set(azureDeviceId, {
+              id: device.id,
+              displayName: device.displayName || azureDeviceId,
+              type: 'device'
+            });
+          }
+        });
+      } catch (error) {
+        logMessage(`resolveDeviceDirectoryObjectsByAzureIds: Batch lookup failed - ${error.message}`);
+      }
+    }
+
+    return resolved;
+  };
+
+  const resolveReportUsers = async (rows, schemaMap, token) => {
+    const resolved = [];
+    const unresolved = [];
+    const seen = new Set();
+
+    for (const row of rows) {
+      const userId = getReportCellValue(row, schemaMap, ['UserId', 'userId']);
+      const upn = getReportCellValue(row, schemaMap, ['UPN', 'UserPrincipalName', 'userPrincipalName']);
+      const userName = getReportCellValue(row, schemaMap, ['UserName', 'userName', 'DisplayName', 'displayName']);
+
+      if (userId && !isZeroGuid(userId) && !seen.has(userId)) {
+        seen.add(userId);
+        resolved.push({ id: userId, displayName: userName || upn || userId, type: 'user' });
+        continue;
+      }
+
+      if (upn) {
+        const user = await resolveItemToDirectoryId(String(upn), token);
+        if (user && user.id && user.type === 'user' && !seen.has(user.id)) {
+          seen.add(user.id);
+          resolved.push({ id: user.id, displayName: user.displayName || upn, type: 'user' });
+          continue;
+        }
+      }
+
+      unresolved.push(userName || upn || userId || 'Unknown user');
+    }
+
+    return { resolved, unresolved };
+  };
+
+  const resolveReportDevices = async (rows, schemaMap, token) => {
+    const resolved = [];
+    const unresolved = [];
+    const seen = new Set();
+    const azureDeviceIds = [];
+
+    rows.forEach((row) => {
+      const azureDeviceId = getReportCellValue(row, schemaMap, ['AadDeviceId', 'AzureAdDeviceId', 'azureADDeviceId']);
+      if (azureDeviceId && !isZeroGuid(azureDeviceId) && !azureDeviceIds.includes(azureDeviceId)) {
+        azureDeviceIds.push(azureDeviceId);
+      }
+    });
+
+    const resolvedByAzureId = await resolveDeviceDirectoryObjectsByAzureIds(azureDeviceIds, token);
+
+    for (const row of rows) {
+      const managedDeviceId = getReportCellValue(row, schemaMap, ['DeviceId', 'ManagedDeviceId', 'managedDeviceId']);
+      const azureDeviceId = getReportCellValue(row, schemaMap, ['AadDeviceId', 'AzureAdDeviceId', 'azureADDeviceId']);
+      const deviceName = getReportCellValue(row, schemaMap, ['DeviceName', 'deviceName', 'DisplayName', 'displayName']);
+
+      if (azureDeviceId && resolvedByAzureId.has(azureDeviceId)) {
+        const device = resolvedByAzureId.get(azureDeviceId);
+        if (!seen.has(device.id)) {
+          seen.add(device.id);
+          resolved.push({
+            id: device.id,
+            displayName: deviceName || device.displayName || azureDeviceId,
+            type: 'device'
+          });
+        }
+        continue;
+      }
+
+      if (managedDeviceId && !isZeroGuid(managedDeviceId)) {
+        try {
+          const device = await getDirectoryObjectId(String(managedDeviceId), token, 'device');
+          if (device && device.directoryId && !seen.has(device.directoryId)) {
+            seen.add(device.directoryId);
+            resolved.push({
+              id: device.directoryId,
+              displayName: deviceName || device.displayName || managedDeviceId,
+              type: 'device'
+            });
+            continue;
+          }
+        } catch (error) {
+          logMessage(`resolveReportDevices: Failed managed device lookup for ${managedDeviceId} - ${error.message}`);
+        }
+      }
+
+      if (deviceName) {
+        const device = await resolveItemToDirectoryId(String(deviceName), token);
+        if (device && device.id && device.type === 'device' && !seen.has(device.id)) {
+          seen.add(device.id);
+          resolved.push({ id: device.id, displayName: device.displayName || deviceName, type: 'device' });
+          continue;
+        }
+      }
+
+      unresolved.push(deviceName || managedDeviceId || azureDeviceId || 'Unknown device');
+    }
+
+    return { resolved, unresolved };
+  };
+
+  const getDirectoryObjectsFromCurrentReport = async (token, mode) => {
+    const reportRequest = await getCapturedReportRequestForActiveTab();
+    if (!reportRequest) return null;
+
+    const reportData = await fetchAllReportRows(reportRequest, token);
+    if (!reportData || !reportData.schema) {
+      return null;
+    }
+
+    const schemaMap = buildSchemaMap(reportData.schema);
+    if (!reportSupportsMode(schemaMap, mode)) {
+      return null;
+    }
+
+    const resolver = mode === 'device' ? resolveReportDevices : resolveReportUsers;
+    const results = await resolver(reportData.rows, schemaMap, token);
+
+    return {
+      reportRequest,
+      totalRows: reportData.totalRowCount,
+      resolved: results.resolved,
+      unresolved: results.unresolved
+    };
+  };
+
+  const resolveSelectedGroupsForModification = async (allSelected, token) => {
+    const groups = [];
+    const seenGroupIds = new Set();
+    const unresolved = [];
+
+    allSelected.searchResults.forEach((group) => {
+      if (!seenGroupIds.has(group.id)) {
+        seenGroupIds.add(group.id);
+        groups.push(group);
+      }
+    });
+
+    for (const groupName of allSelected.tableSelections) {
+      try {
+        const groupData = await fetchJSON(`https://graph.microsoft.com/v1.0/groups?$filter=displayName eq '${encodeURIComponent(groupName)}'&$select=id,displayName`, {
+          method: "GET",
+          headers: { "Authorization": token, "Content-Type": "application/json" }
+        });
+
+        if (groupData.value && groupData.value.length > 0) {
+          const groupId = groupData.value[0].id;
+          if (!seenGroupIds.has(groupId)) {
+            seenGroupIds.add(groupId);
+            groups.push({
+              id: groupId,
+              name: groupData.value[0].displayName || groupName
+            });
+          }
+        } else {
+          unresolved.push({ groupName, reason: 'Group not found' });
+        }
+      } catch (error) {
+        unresolved.push({ groupName, reason: error.message });
+      }
+    }
+
+    return { groups, unresolved };
+  };
+
+  // getAllGroupsMap: Get groups map (device & user) for lookups, with dynamic group tracking
   const getAllGroupsMap = async (deviceObjectId, userObjectId, token) => {
     const headers = {
       "Authorization": token,
@@ -1963,6 +2290,58 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
+  const addCurrentReportObjectsToGroups = async (allSelected, token) => {
+    const targetType = state.targetMode === 'device' ? 'device' : 'user';
+    const reportObjects = await getDirectoryObjectsFromCurrentReport(token, state.targetMode);
+
+    if (!reportObjects) {
+      return false;
+    }
+
+    if (reportObjects.resolved.length === 0) {
+      throw new Error(`No ${targetType}s from the current report could be resolved.`);
+    }
+
+    const groupTargets = await resolveSelectedGroupsForModification(allSelected, token);
+    if (groupTargets.groups.length === 0) {
+      throw new Error('Could not resolve any selected groups.');
+    }
+
+    showProcessingNotification(
+      `Adding ${reportObjects.resolved.length} ${targetType}${reportObjects.resolved.length !== 1 ? 's' : ''} from report to ${groupTargets.groups.length} group(s)...`
+    );
+
+    const groupResults = [];
+    for (const group of groupTargets.groups) {
+      const result = await addDirectoryObjectsToGroup(group.id, reportObjects.resolved, token);
+      groupResults.push({ group, result });
+    }
+
+    const failures = [];
+    let totalAdded = 0;
+    let totalFailed = 0;
+
+    groupResults.forEach(({ group, result }) => {
+      totalAdded += result.added;
+      totalFailed += result.failed;
+
+      if (result.failed > 0) {
+        failures.push(`${group.name}: ${result.failed} failed`);
+      }
+    });
+
+    reportObjects.unresolved.forEach((item) => failures.push(`Source ${targetType}: ${item} could not be resolved`));
+    groupTargets.unresolved.forEach((group) => failures.push(`Group ${group.groupName}: ${group.reason}`));
+
+    const processedCount = reportObjects.resolved.length;
+    const success = failures.length === 0 && totalFailed === 0;
+    const successMsg = `Added ${processedCount} ${targetType}${processedCount !== 1 ? 's' : ''} from the current report to ${groupTargets.groups.length} group(s).`;
+    const errorMsg = `Processed ${processedCount} ${targetType}${processedCount !== 1 ? 's' : ''} from the current report.\nAdded: ${totalAdded}\nFailed: ${totalFailed + reportObjects.unresolved.length}\n${failures.join('\n')}`;
+
+    showResultNotification(success ? successMsg : errorMsg, success ? 'success' : 'error');
+    return true;
+  };
+
   // Handle Adding Device/User to Selected Groups
   const handleAddToGroups = async () => {
     const targetType = state.targetMode === 'device' ? 'device' : 'user';
@@ -1985,8 +2364,13 @@ document.addEventListener("DOMContentLoaded", () => {
     showProcessingNotification(`Adding ${targetType} to ${totalCount} group(s)...`);
 
     try {
-      const { mdmDeviceId } = await verifyMdmUrl();
       const token = await getToken();
+      const usedReportSource = await addCurrentReportObjectsToGroups(allSelected, token);
+      if (usedReportSource) {
+        return;
+      }
+
+      const { mdmDeviceId } = await verifyMdmUrl();
       logMessage(`addToGroups: Extracted mdmDeviceId ${mdmDeviceId}`);
 
       const { directoryId, displayName } = await getDirectoryObjectId(mdmDeviceId, token, state.targetMode);
@@ -2000,23 +2384,13 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       // Process table selection groups (need to resolve names to IDs)
-      for (const groupName of allSelected.tableSelections) {
-        try {
-          const groupData = await fetchJSON(`https://graph.microsoft.com/v1.0/groups?$filter=displayName eq '${encodeURIComponent(groupName)}'&$select=id,displayName`, {
-            method: "GET",
-            headers: { "Authorization": token, "Content-Type": "application/json" }
-          });
-
-          if (groupData.value && groupData.value.length > 0) {
-            const groupId = groupData.value[0].id;
-            promises.push(addToSingleGroup(groupId, directoryId, token, groupName));
-          } else {
-            promises.push(Promise.resolve({ groupName, error: "Group not found" }));
-          }
-        } catch (e) {
-          promises.push(Promise.resolve({ groupName, error: e.message }));
-        }
+      const groupTargets = await resolveSelectedGroupsForModification(allSelected, token);
+      for (const group of groupTargets.groups.slice(allSelected.searchResults.length)) {
+        promises.push(addToSingleGroup(group.id, directoryId, token, group.name));
       }
+      groupTargets.unresolved.forEach((group) => {
+        promises.push(Promise.resolve({ groupName: group.groupName, error: group.reason }));
+      });
 
       const results = await Promise.all(promises);
       let success = true;
@@ -3280,8 +3654,8 @@ document.addEventListener("DOMContentLoaded", () => {
     return null;
   };
 
-  // Add members to group using Graph API batch requests
-  const addMembersToGroup = async (groupId, memberIds, token) => {
+  // Add directory objects to a group using Graph API batch requests
+  const addDirectoryObjectsToGroup = async (groupId, memberIds, token, onProgress = null) => {
     const results = {
       total: memberIds.length,
       added: 0,
@@ -3295,9 +3669,9 @@ document.addEventListener("DOMContentLoaded", () => {
       const batch = memberIds.slice(i, i + batchSize);
 
       const progress = Math.min(100, Math.round(((i + batch.length) / memberIds.length) * 100));
-      document.getElementById('bulkAddProgressBar').style.width = `${progress}%`;
-      document.getElementById('bulkAddProgressDetails').textContent =
-        `Processing ${Math.min(i + batch.length, memberIds.length)} of ${memberIds.length}...`;
+      if (onProgress) {
+        onProgress(progress, `Processing ${Math.min(i + batch.length, memberIds.length)} of ${memberIds.length}...`);
+      }
 
       try {
         const idMapping = {};
@@ -3362,8 +3736,18 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    document.getElementById('bulkAddProgressBar').style.width = '100%';
+    if (onProgress) {
+      onProgress(100, `Processing ${memberIds.length} of ${memberIds.length}...`);
+    }
     return results;
+  };
+
+  // Add members to group using Graph API batch requests
+  const addMembersToGroup = async (groupId, memberIds, token) => {
+    return addDirectoryObjectsToGroup(groupId, memberIds, token, (progress, details) => {
+      document.getElementById('bulkAddProgressBar').style.width = `${progress}%`;
+      document.getElementById('bulkAddProgressDetails').textContent = details;
+    });
   };
 
   // Show bulk add results
