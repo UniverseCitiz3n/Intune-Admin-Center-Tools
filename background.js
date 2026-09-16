@@ -62,8 +62,9 @@ const persistReportRequest = (details) => {
         method: details.method,
         body: parsedBody,
         capturedAt: new Date(details.timeStamp || Date.now()).toISOString(),
-        initiator: requestSource
-      };
+        initiator: requestSource,
+        documentUrl: details.documentUrl || null
+        };
       chrome.storage.local.set({ [REPORT_REQUESTS_STORAGE_KEY]: existing });
     });
   }

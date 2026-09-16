@@ -34,6 +34,20 @@ test('identifies capture-worthy Intune report requests', () => {
     url: 'https://graph.microsoft.com/beta/deviceManagement/reports/getDeviceStatusByCompliacePolicyReport',
     initiator: 'https://intune.microsoft.com'
   }), false);
+
+  assert.equal(shouldCaptureReportRequest({
+    tabId: 5,
+    method: 'POST',
+    url: 'https://graph.microsoft.com/beta/deviceManagement/managedDevices',
+    initiator: 'https://intune.microsoft.com'
+  }), false);
+
+  assert.equal(shouldCaptureReportRequest({
+    tabId: 5,
+    method: 'POST',
+    url: 'https://graph.microsoft.com/beta/deviceManagement/reports/getDeviceStatusByCompliacePolicyReport',
+    initiator: 'https://intune.microsoft.com.evil.example'
+  }), false);
 });
 
 test('decodes raw JSON request bodies', () => {

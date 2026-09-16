@@ -1005,9 +1005,38 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
+  const isDeviceContextUrl = (url) => /(?:mdmDeviceId|managedDeviceId)\//i.test(url || '');
+
+  const isSupportedReportAddContext = (activeTabUrl, reportRequest) => {
+    if (!reportRequest || isDeviceContextUrl(activeTabUrl)) {
+      return false;
+    }
+
+    if (reportRequest.documentUrl) {
+      return reportRequest.documentUrl === activeTabUrl;
+    }
+
+    return true;
+  };
+
   const cloneJSON = (value) => JSON.parse(JSON.stringify(value));
   const escapeODataString = (value) => String(value).replace(/'/g, "''");
   const encodeODataFilter = (expression) => encodeURIComponent(expression);
+
+  const runWithConcurrency = async (items, limit, worker) => {
+    const results = new Array(items.length);
+    let nextIndex = 0;
+
+    const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex++;
+        results[currentIndex] = await worker(items[currentIndex], currentIndex);
+      }
+    });
+
+    await Promise.all(runners);
+    return results;
+  };
 
   const coercePagingValue = (sourceValue, nextValue) => (
     typeof sourceValue === 'string' ? String(nextValue) : nextValue
@@ -1135,6 +1164,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const resolved = [];
     const unresolved = [];
     const seen = new Set();
+    const pendingLookups = [];
 
     for (const row of rows) {
       const userId = getReportCellValue(row, schemaMap, ['UserId', 'userId']);
@@ -1148,16 +1178,26 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       if (upn) {
-        const user = await resolveItemToDirectoryId(String(upn), token);
-        if (user && user.id && user.type === 'user' && !seen.has(user.id)) {
-          seen.add(user.id);
-          resolved.push({ id: user.id, displayName: user.displayName || upn, type: 'user' });
-          continue;
-        }
+        pendingLookups.push({ upn: String(upn), userName });
+      } else {
+        unresolved.push(userName || upn || userId || 'Unknown user');
+      }
+    }
+
+    const lookupResults = await runWithConcurrency(pendingLookups, 8, async (item) => {
+      const user = await resolveItemToDirectoryId(item.upn, token);
+      return { item, user };
+    });
+
+    lookupResults.forEach(({ item, user }) => {
+      if (user && user.id && user.type === 'user' && !seen.has(user.id)) {
+        seen.add(user.id);
+        resolved.push({ id: user.id, displayName: user.displayName || item.upn, type: 'user' });
+        return;
       }
 
-      unresolved.push(userName || upn || userId || 'Unknown user');
-    }
+      unresolved.push(item.userName || item.upn || 'Unknown user');
+    });
 
     return { resolved, unresolved };
   };
@@ -1168,6 +1208,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const seen = new Set();
     const azureDeviceIds = [];
     const seenAzureDeviceIds = new Set();
+    const pendingLookups = [];
 
     rows.forEach((row) => {
       const azureDeviceId = getReportCellValue(row, schemaMap, ['AadDeviceId', 'AzureAdDeviceId', 'azureADDeviceId']);
@@ -1197,40 +1238,64 @@ document.addEventListener("DOMContentLoaded", () => {
         continue;
       }
 
-      if (managedDeviceId && !isZeroGuid(managedDeviceId)) {
+      pendingLookups.push({
+        managedDeviceId: managedDeviceId ? String(managedDeviceId) : '',
+        deviceName: deviceName ? String(deviceName) : '',
+        azureDeviceId: azureDeviceId ? String(azureDeviceId) : ''
+      });
+    }
+
+    const lookupResults = await runWithConcurrency(pendingLookups, 6, async (item) => {
+      if (item.managedDeviceId && !isZeroGuid(item.managedDeviceId)) {
         try {
-          const device = await getDirectoryObjectId(String(managedDeviceId), token, 'device');
-          if (device && device.directoryId && !seen.has(device.directoryId)) {
-            seen.add(device.directoryId);
-            resolved.push({
-              id: device.directoryId,
-              displayName: deviceName || device.displayName || managedDeviceId,
-              type: 'device'
-            });
-            continue;
+          const device = await getDirectoryObjectId(item.managedDeviceId, token, 'device');
+          if (device && device.directoryId) {
+            return {
+              item,
+              device: {
+                id: device.directoryId,
+                displayName: item.deviceName || device.displayName || item.managedDeviceId,
+                type: 'device'
+              }
+            };
           }
         } catch (error) {
-          logMessage(`resolveReportDevices: Failed managed device lookup for ${managedDeviceId} - ${error.message}`);
+          logMessage(`resolveReportDevices: Failed managed device lookup for ${item.managedDeviceId} - ${error.message}`);
         }
       }
 
-      if (deviceName) {
-        const device = await resolveItemToDirectoryId(String(deviceName), token);
-        if (device && device.id && device.type === 'device' && !seen.has(device.id)) {
-          seen.add(device.id);
-          resolved.push({ id: device.id, displayName: device.displayName || deviceName, type: 'device' });
-          continue;
+      if (item.deviceName) {
+        const device = await resolveItemToDirectoryId(item.deviceName, token);
+        if (device && device.id && device.type === 'device') {
+          return {
+            item,
+            device: {
+              id: device.id,
+              displayName: device.displayName || item.deviceName,
+              type: 'device'
+            }
+          };
         }
       }
 
-      unresolved.push(deviceName || managedDeviceId || azureDeviceId || 'Unknown device');
-    }
+      return { item, device: null };
+    });
+
+    lookupResults.forEach(({ item, device }) => {
+      if (device && !seen.has(device.id)) {
+        seen.add(device.id);
+        resolved.push(device);
+        return;
+      }
+
+      unresolved.push(item.deviceName || item.managedDeviceId || item.azureDeviceId || 'Unknown device');
+    });
 
     return { resolved, unresolved };
   };
 
-  const getDirectoryObjectsFromCurrentReport = async (token, mode) => {
-    const reportRequest = await getCapturedReportRequestForActiveTab();
+  const getDirectoryObjectsFromCurrentReport = async (token, mode, reportRequest = null) => {
+    reportRequest = reportRequest || await getCapturedReportRequestForActiveTab();
     if (!reportRequest) {
       return { status: 'missing' };
     }
@@ -2317,7 +2382,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const addCurrentReportObjectsToGroups = async (allSelected, token) => {
     const targetType = state.targetMode === 'device' ? 'device' : 'user';
-    const reportObjects = await getDirectoryObjectsFromCurrentReport(token, state.targetMode);
+    const activeTab = await getActiveTab();
+    const reportRequest = await getCapturedReportRequestForActiveTab();
+    if (!isSupportedReportAddContext(activeTab.url, reportRequest)) {
+      return false;
+    }
+
+    const reportObjects = await getDirectoryObjectsFromCurrentReport(token, state.targetMode, reportRequest);
 
     if (!reportObjects || reportObjects.status === 'missing') {
       return false;
