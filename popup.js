@@ -1006,6 +1006,8 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const cloneJSON = (value) => JSON.parse(JSON.stringify(value));
+  const escapeODataString = (value) => String(value).replace(/'/g, "''");
+  const encodeODataFilter = (expression) => encodeURIComponent(expression);
 
   const coercePagingValue = (sourceValue, nextValue) => (
     typeof sourceValue === 'string' ? String(nextValue) : nextValue
@@ -1264,7 +1266,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     for (const groupName of allSelected.tableSelections) {
       try {
-        const groupData = await fetchJSON(`https://graph.microsoft.com/v1.0/groups?$filter=displayName eq '${encodeURIComponent(groupName)}'&$select=id,displayName`, {
+        const filter = encodeODataFilter(`displayName eq '${escapeODataString(groupName)}'`);
+        const groupData = await fetchJSON(`https://graph.microsoft.com/v1.0/groups?$filter=${filter}&$select=id,displayName`, {
           method: "GET",
           headers: { "Authorization": token, "Content-Type": "application/json" }
         });
@@ -1543,7 +1546,8 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error("No user associated with this device.");
       }
 
-      const userData = await fetchJSON(`https://graph.microsoft.com/beta/users?$filter=userPrincipalName eq '${encodeURIComponent(userPrincipalName)}'`, {
+      const filter = encodeODataFilter(`userPrincipalName eq '${escapeODataString(userPrincipalName)}'`);
+      const userData = await fetchJSON(`https://graph.microsoft.com/beta/users?$filter=${filter}`, {
         method: "GET",
         headers: { "Authorization": token, "Content-Type": "application/json" }
       });
@@ -2471,7 +2475,8 @@ document.addEventListener("DOMContentLoaded", () => {
       // Process table selection groups (need to resolve names to IDs)
       for (const groupName of allSelected.tableSelections) {
         try {
-          const groupData = await fetchJSON(`https://graph.microsoft.com/v1.0/groups?$filter=displayName eq '${encodeURIComponent(groupName)}'&$select=id,displayName`, {
+          const filter = encodeODataFilter(`displayName eq '${escapeODataString(groupName)}'`);
+          const groupData = await fetchJSON(`https://graph.microsoft.com/v1.0/groups?$filter=${filter}&$select=id,displayName`, {
             method: "GET",
             headers: { "Authorization": token, "Content-Type": "application/json" }
           });
@@ -3616,7 +3621,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // Check if item looks like a UPN (contains @)
     if (item.includes('@')) {
       try {
-        const userData = await fetchJSON(`https://graph.microsoft.com/v1.0/users?$filter=userPrincipalName eq '${encodeURIComponent(escapedItem)}'&$select=id,displayName,userPrincipalName`, {
+        const filter = encodeODataFilter(`userPrincipalName eq '${escapedItem}'`);
+        const userData = await fetchJSON(`https://graph.microsoft.com/v1.0/users?$filter=${filter}&$select=id,displayName,userPrincipalName`, {
           method: "GET", headers
         });
         if (userData.value && userData.value.length > 0) {
@@ -3629,7 +3635,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Try as device displayName
     try {
-      const deviceData = await fetchJSON(`https://graph.microsoft.com/v1.0/devices?$filter=displayName eq '${encodeURIComponent(escapedItem)}'&$select=id,displayName`, {
+      const filter = encodeODataFilter(`displayName eq '${escapedItem}'`);
+      const deviceData = await fetchJSON(`https://graph.microsoft.com/v1.0/devices?$filter=${filter}&$select=id,displayName`, {
         method: "GET", headers
       });
       if (deviceData.value && deviceData.value.length > 0) {
@@ -3641,7 +3648,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Try as user displayName
     try {
-      const userData = await fetchJSON(`https://graph.microsoft.com/v1.0/users?$filter=displayName eq '${encodeURIComponent(escapedItem)}'&$select=id,displayName,userPrincipalName`, {
+      const filter = encodeODataFilter(`displayName eq '${escapedItem}'`);
+      const userData = await fetchJSON(`https://graph.microsoft.com/v1.0/users?$filter=${filter}&$select=id,displayName,userPrincipalName`, {
         method: "GET", headers
       });
       if (userData.value && userData.value.length > 0) {
@@ -4410,7 +4418,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const deviceObjectId = deviceObjData.value[0].id;
       let userPromise;
       if (userPrincipalName && userPrincipalName !== 'Unknown user') {
-        userPromise = fetchJSON(`https://graph.microsoft.com/beta/users?$filter=userPrincipalName eq '${encodeURIComponent(userPrincipalName)}'`, {
+        const filter = encodeODataFilter(`userPrincipalName eq '${escapeODataString(userPrincipalName)}'`);
+        userPromise = fetchJSON(`https://graph.microsoft.com/beta/users?$filter=${filter}`, {
           method: "GET",
           headers: { "Authorization": token, "Content-Type": "application/json" }
         }).then(userData => (userData.value && userData.value.length > 0) ? userData.value[0].id : null);
@@ -4576,7 +4585,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const deviceObjectId = deviceObjData.value[0].id;
       let userPromise;
       if (userPrincipalName && userPrincipalName !== 'Unknown user') {
-        userPromise = fetchJSON(`https://graph.microsoft.com/beta/users?$filter=userPrincipalName eq '${encodeURIComponent(userPrincipalName)}'`, {
+        const filter = encodeODataFilter(`userPrincipalName eq '${escapeODataString(userPrincipalName)}'`);
+        userPromise = fetchJSON(`https://graph.microsoft.com/beta/users?$filter=${filter}`, {
           method: "GET",
           headers: { "Authorization": token, "Content-Type": "application/json" }
         }).then(userData => (userData.value && userData.value.length > 0) ? userData.value[0].id : null);
@@ -5017,7 +5027,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const deviceObjectId = deviceObjData.value[0].id;
       let userObjectId = null;
       if (userPrincipalName && userPrincipalName !== 'Unknown user') {
-        const userData = await fetchJSON(`https://graph.microsoft.com/beta/users?$filter=userPrincipalName eq '${encodeURIComponent(userPrincipalName)}'`, {
+        const filter = encodeODataFilter(`userPrincipalName eq '${escapeODataString(userPrincipalName)}'`);
+        const userData = await fetchJSON(`https://graph.microsoft.com/beta/users?$filter=${filter}`, {
           method: "GET",
           headers: { "Authorization": token, "Content-Type": "application/json" }
         });
@@ -5204,7 +5215,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const deviceObjectId = deviceObjData.value[0].id;
       let userObjectId = null;
       if (userPrincipalName && userPrincipalName !== 'Unknown user') {
-        const userData = await fetchJSON(`https://graph.microsoft.com/beta/users?$filter=userPrincipalName eq '${encodeURIComponent(userPrincipalName)}'`, {
+        const filter = encodeODataFilter(`userPrincipalName eq '${escapeODataString(userPrincipalName)}'`);
+        const userData = await fetchJSON(`https://graph.microsoft.com/beta/users?$filter=${filter}`, {
           method: "GET",
           headers: { "Authorization": token, "Content-Type": "application/json" }
         });
@@ -6721,7 +6733,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (hasValidPrimaryUser) {
         // Get the user ID for devices with a primary user
-        const userData = await fetchJSON(`https://graph.microsoft.com/beta/users?$filter=userPrincipalName eq '${encodeURIComponent(userPrincipalName)}'`, {
+        const filter = encodeODataFilter(`userPrincipalName eq '${escapeODataString(userPrincipalName)}'`);
+        const userData = await fetchJSON(`https://graph.microsoft.com/beta/users?$filter=${filter}`, {
           method: "GET",
           headers: { "Authorization": token, "Content-Type": "application/json" }
         });

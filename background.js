@@ -1,5 +1,12 @@
 let msGraphToken = null;
 const REPORT_REQUESTS_STORAGE_KEY = 'lastCapturedReportRequests';
+const isTrustedIntuneRequestSource = (value) => {
+  try {
+    return new URL(value).origin === 'https://intune.microsoft.com';
+  } catch (error) {
+    return false;
+  }
+};
 
 const decodeRequestBody = (requestBody) => {
   if (!requestBody) return null;
@@ -30,7 +37,7 @@ const persistReportRequest = (details) => {
   if (details.tabId < 0 || details.method !== 'POST') return;
   if (!details.url.includes('/deviceManagement/reports/')) return;
   const requestSource = details.initiator || details.originUrl || details.documentUrl || '';
-  if (!requestSource.startsWith('https://intune.microsoft.com')) return;
+  if (!isTrustedIntuneRequestSource(requestSource)) return;
 
   const requestBody = decodeRequestBody(details.requestBody);
   if (!requestBody) return;
