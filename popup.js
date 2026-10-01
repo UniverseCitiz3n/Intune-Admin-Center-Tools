@@ -5,6 +5,7 @@ document.addEventListener("DOMContentLoaded", () => {
     sortDirection: 'asc',
     sortField: 'deviceName', // Track which field to sort by
     theme: 'light',
+    activeTabUrl: '',
     targetMode: 'device', // New: track whether we're targeting devices or users
     selectedTableRows: new Set(), // Track selected table rows
     dynamicGroups: new Set(), // Track dynamic groups that cannot be modified manually
@@ -19,6 +20,13 @@ document.addEventListener("DOMContentLoaded", () => {
     },
     columnFilters: {} // Track active column filter selections: { columnKey: Set([val1, val2]) }
   };
+
+  const {
+    isDeviceContextUrl,
+    normalizeIntunePageContext,
+    isKnownReportAddContextUrl,
+    isSupportedReportAddContext
+  } = window.reportContextHelpers || {};
 
   // ── Theme Management Functions ───────────────────────────────────────
   const toggleTheme = () => {
@@ -975,6 +983,7 @@ document.addEventListener("DOMContentLoaded", () => {
           reject(new Error('No active tab found.'));
           return;
         }
+        state.activeTabUrl = tabs[0].url || '';
         resolve(tabs[0]);
       });
     });
@@ -1003,30 +1012,6 @@ document.addEventListener("DOMContentLoaded", () => {
         resolve(reportRequest);
       });
     });
-  };
-
-  const isDeviceContextUrl = (url) => /(?:mdmDeviceId|managedDeviceId)\//i.test(url || '');
-
-  const normalizeIntunePageContext = (url) => {
-    try {
-      const parsed = new URL(url);
-      const normalizedHash = (parsed.hash || '').split('?')[0].replace(/\/+$/, '');
-      return `${parsed.origin}${parsed.pathname}${normalizedHash}`;
-    } catch (error) {
-      return url || '';
-    }
-  };
-
-  const isSupportedReportAddContext = (activeTabUrl, reportRequest) => {
-    if (!reportRequest || isDeviceContextUrl(activeTabUrl)) {
-      return false;
-    }
-
-    if (reportRequest.documentUrl) {
-      return normalizeIntunePageContext(reportRequest.documentUrl) === normalizeIntunePageContext(activeTabUrl);
-    }
-
-    return true;
   };
 
   const cloneJSON = (value) => JSON.parse(JSON.stringify(value));
@@ -1711,8 +1696,17 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.title = tooltipText;
       } else {
         btn.classList.remove('disabled');
-        // Remove tooltip when buttons are enabled
-        btn.removeAttribute('title');
+        if (id === 'addToGroups') {
+          const addButtonPresentation = getAddButtonPresentation();
+          if (addButtonPresentation.title) {
+            btn.title = addButtonPresentation.title;
+          } else {
+            btn.removeAttribute('title');
+          }
+        } else {
+          // Remove tooltip when buttons are enabled
+          btn.removeAttribute('title');
+        }
       }
     });
 
@@ -1806,12 +1800,51 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
+  const getAddButtonPresentation = () => {
+    if (isKnownReportAddContextUrl && isKnownReportAddContextUrl(state.activeTabUrl)) {
+      const targetType = state.targetMode === 'device' ? 'devices' : 'users';
+      return {
+        text: 'Add Visible',
+        title: `Add visible ${targetType} from the current Intune report to selected groups.`
+      };
+    }
+
+    return {
+      text: 'Add',
+      title: ''
+    };
+  };
+
   // updateButtonText: Update button text based on current target mode
   const updateButtonText = () => {
     const targetType = state.targetMode === 'device' ? 'Device' : 'User';
-    document.getElementById('addBtnText').textContent = `Add`;
+    const addButton = document.getElementById('addToGroups');
+    const addButtonText = document.getElementById('addBtnText');
+    const removeButton = document.getElementById('removeFromGroups');
+    const addButtonPresentation = getAddButtonPresentation();
+
+    addButtonText.textContent = addButtonPresentation.text;
+    if (addButtonPresentation.title) {
+      addButton.title = addButtonPresentation.title;
+    } else {
+      addButton.removeAttribute('title');
+    }
+
     document.getElementById('removeBtnText').textContent = `Remove`;
+    if (removeButton && !removeButton.classList.contains('disabled')) {
+      removeButton.removeAttribute('title');
+    }
     logMessage(`updateButtonText: Updated buttons for ${targetType} mode`);
+  };
+
+  const refreshActionButtonContext = async () => {
+    try {
+      await getActiveTab();
+    } catch (error) {
+      state.activeTabUrl = '';
+    }
+    updateButtonText();
+    updateActionButtonsState();
   };
 
   // handleTargetModeToggle: Handle switching between device and user modes
@@ -1820,6 +1853,7 @@ document.addEventListener("DOMContentLoaded", () => {
     
     if (state.targetMode === mode) {
       logMessage(`handleTargetModeToggle: No change needed - already in ${mode} mode`);
+      updateButtonText();
       return; // No change needed
     }
 
@@ -2396,7 +2430,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const targetType = state.targetMode === 'device' ? 'device' : 'user';
     const activeTab = await getActiveTab();
     const reportRequest = await getCapturedReportRequestForActiveTab();
-    if (!isSupportedReportAddContext(activeTab.url, reportRequest)) {
+    const activeTabUrl = activeTab.url || '';
+    const isKnownReportContext = isKnownReportAddContextUrl && isKnownReportAddContextUrl(activeTabUrl);
+
+    if (!isSupportedReportAddContext(activeTabUrl, reportRequest)) {
+      if (isKnownReportContext && !reportRequest) {
+        throw new Error('No visible report query was captured for this page yet. Refresh the Intune report list, then try Add Visible again.');
+      }
       return false;
     }
 
@@ -7272,8 +7312,7 @@ document.addEventListener("DOMContentLoaded", () => {
           applyTheme(currentTheme);
           document.getElementById('deviceModeBtn').classList.add('active');
           document.getElementById('userModeBtn').classList.remove('active');
-          document.getElementById('addBtnText').textContent = 'Add';
-          document.getElementById('removeBtnText').textContent = 'Remove';
+          updateButtonText();
 
           // Clear all table content
           document.getElementById('configTableBody').innerHTML = '';
@@ -7369,6 +7408,7 @@ document.addEventListener("DOMContentLoaded", () => {
   restoreState();
   restoreFilterValue();
   initializeTheme();
+  refreshActionButtonContext();
   
   // Set version number in settings dropdown
   const versionElement = document.getElementById('extensionVersion');
