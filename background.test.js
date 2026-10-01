@@ -3,8 +3,12 @@ const assert = require('node:assert/strict');
 
 const {
   decodeRequestBody,
+  extractPolicyIdFromReportUrl,
+  extractPolicyIdsFromRequest,
+  getReportRequestKind,
   hasTrustedRequestSource,
   isTrustedIntuneRequestSource,
+  normalizeReportRequestStore,
   shouldCaptureReportRequest
 } = require('./background.js');
 
@@ -45,7 +49,7 @@ test('identifies capture-worthy Intune report requests', () => {
     method: 'POST',
     url: 'https://graph.microsoft.com/beta/deviceManagement/reports/getDeviceStatusByCompliacePolicyReport',
     initiator: 'https://intune.microsoft.com'
-  }), false);
+  }), true);
 
   assert.equal(shouldCaptureReportRequest({
     tabId: 5,
@@ -111,4 +115,28 @@ test('decodes multipart raw bodies and form data payloads', () => {
 
   assert.equal(decodeRequestBody(multipartBody), '{"filter":"PolicyStatus eq 4"}');
   assert.equal(decodeRequestBody(formDataBody), JSON.stringify(formDataBody.formData));
+});
+
+test('extracts policy IDs and normalizes report storage', () => {
+  assert.equal(
+    extractPolicyIdFromReportUrl('https://intune.microsoft.com/#view/Microsoft_Intune_DeviceSettings/DeviceStatusByCompliacePolicy.ReactView/policyId/7ca45552-b08b-47df-9b51-8a40abbcfb50/foo'),
+    '7ca45552-b08b-47df-9b51-8a40abbcfb50'
+  );
+
+  assert.deepEqual(
+    extractPolicyIdsFromRequest({
+      filter: "(PolicyId eq '7ca45552-b08b-47df-9b51-8a40abbcfb50') and (PolicyStatus eq '4')"
+    }),
+    ['7ca45552-b08b-47df-9b51-8a40abbcfb50']
+  );
+
+  assert.equal(
+    getReportRequestKind('https://graph.microsoft.com/beta/deviceManagement/reports/getDeviceStatusSummaryByCompliacePolicyReport'),
+    'summary'
+  );
+
+  assert.deepEqual(
+    normalizeReportRequestStore({ legacy: { body: {} } }),
+    { byTabId: { legacy: { body: {} } }, byPolicyId: {} }
+  );
 });

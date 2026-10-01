@@ -25,6 +25,7 @@ document.addEventListener("DOMContentLoaded", () => {
     isDeviceContextUrl,
     normalizeIntunePageContext,
     isKnownReportAddContextUrl,
+    extractPolicyIdFromReportUrl,
     isSupportedReportAddContext
   } = window.reportContextHelpers || {};
 
@@ -992,26 +993,69 @@ document.addEventListener("DOMContentLoaded", () => {
   const getCapturedReportRequestForActiveTab = async () => {
     const activeTab = await getActiveTab();
     const tabId = activeTab.id;
-    if (typeof tabId !== 'number') return null;
+    const activeTabUrl = activeTab.url || '';
+    const currentPolicyId = extractPolicyIdFromReportUrl ? extractPolicyIdFromReportUrl(activeTabUrl) : null;
 
     return new Promise((resolve) => {
       chrome.storage.local.get([REPORT_REQUESTS_STORAGE_KEY], (data) => {
-        const requests = data[REPORT_REQUESTS_STORAGE_KEY] || {};
-        const reportRequest = requests[String(tabId)];
-        if (!reportRequest || !reportRequest.capturedAt) {
-          resolve(null);
+        const storedRequests = data[REPORT_REQUESTS_STORAGE_KEY] || {};
+        const requests = (storedRequests.byTabId || storedRequests.byPolicyId)
+          ? storedRequests
+          : { byTabId: storedRequests, byPolicyId: {} };
+
+        const isFresh = (reportRequest) => {
+          if (!reportRequest || !reportRequest.capturedAt) return false;
+          const capturedAt = new Date(reportRequest.capturedAt).getTime();
+          return Boolean(capturedAt) && (Date.now() - capturedAt) <= REPORT_REQUEST_MAX_AGE_MS;
+        };
+
+        const tabRequest = (typeof tabId === 'number' && requests.byTabId)
+          ? requests.byTabId[String(tabId)]
+          : null;
+        const policyRequestBucket = currentPolicyId && requests.byPolicyId
+          ? requests.byPolicyId[currentPolicyId]
+          : null;
+        const statusRequest = policyRequestBucket?.requests?.status || null;
+
+        if (isFresh(statusRequest)) {
+          resolve(statusRequest);
           return;
         }
 
-        const capturedAt = new Date(reportRequest.capturedAt).getTime();
-        if (!capturedAt || (Date.now() - capturedAt) > REPORT_REQUEST_MAX_AGE_MS) {
-          resolve(null);
+        if (isFresh(tabRequest)) {
+          resolve(tabRequest);
           return;
         }
 
-        resolve(reportRequest);
+        if (isFresh(policyRequestBucket?.lastRequest)) {
+          resolve(policyRequestBucket.lastRequest);
+          return;
+        }
+
+        resolve(null);
       });
     });
+  };
+
+  const buildDefaultStatusReportRequestFromUrl = (activeTabUrl) => {
+    const policyId = extractPolicyIdFromReportUrl ? extractPolicyIdFromReportUrl(activeTabUrl) : null;
+    if (!policyId) return null;
+
+    return {
+      url: 'https://graph.microsoft.com/beta/deviceManagement/reports/getDeviceStatusByCompliacePolicyReport',
+      method: 'POST',
+      body: {
+        select: [],
+        skip: 0,
+        top: 50,
+        filter: `(PolicyId eq '${policyId}')`,
+        orderBy: ['DeviceName asc'],
+        search: ''
+      },
+      capturedAt: new Date().toISOString(),
+      documentUrl: activeTabUrl,
+      synthesized: true
+    };
   };
 
   const cloneJSON = (value) => JSON.parse(JSON.stringify(value));
@@ -2429,13 +2473,18 @@ document.addEventListener("DOMContentLoaded", () => {
   const addCurrentReportObjectsToGroups = async (allSelected, token) => {
     const targetType = state.targetMode === 'device' ? 'device' : 'user';
     const activeTab = await getActiveTab();
-    const reportRequest = await getCapturedReportRequestForActiveTab();
+    let reportRequest = await getCapturedReportRequestForActiveTab();
     const activeTabUrl = activeTab.url || '';
     const isKnownReportContext = isKnownReportAddContextUrl && isKnownReportAddContextUrl(activeTabUrl);
+    const defaultStatusRequest = buildDefaultStatusReportRequestFromUrl(activeTabUrl);
+
+    if (isKnownReportContext && (!reportRequest || !reportRequest.url || !reportRequest.url.includes('getDeviceStatusByCompliacePolicyReport'))) {
+      reportRequest = defaultStatusRequest || reportRequest;
+    }
 
     if (!isSupportedReportAddContext(activeTabUrl, reportRequest)) {
       if (isKnownReportContext && !reportRequest) {
-        throw new Error('No visible report query was captured for this page yet. Refresh the Intune report list, then try Add Visible again.');
+        throw new Error('Could not determine the current report query. Refresh the report list or interact with filters/search, then try Add Visible again.');
       }
       return false;
     }

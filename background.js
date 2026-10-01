@@ -1,5 +1,7 @@
 let msGraphToken = null;
 const REPORT_REQUESTS_STORAGE_KEY = 'lastCapturedReportRequests';
+const REPORT_STATUS_ENDPOINT = 'getDeviceStatusByCompliacePolicyReport';
+const REPORT_SUMMARY_ENDPOINT = 'getDeviceStatusSummaryByCompliacePolicyReport';
 const isTrustedIntuneRequestSource = (value) => {
   try {
     const { hostname, origin, protocol } = new URL(value);
@@ -24,9 +26,63 @@ const hasTrustedRequestSource = (details) => {
   return requestSources.some(isTrustedIntuneRequestSource);
 };
 const shouldCaptureReportRequest = (details) => {
-  if (!details || details.tabId < 0 || details.method !== 'POST') return false;
+  if (!details || details.method !== 'POST') return false;
   if (!details.url || !details.url.includes('/deviceManagement/reports/')) return false;
   return hasTrustedRequestSource(details);
+};
+
+const normalizeReportRequestStore = (store) => {
+  if (store && typeof store === 'object' && (store.byTabId || store.byPolicyId)) {
+    return {
+      byTabId: store.byTabId && typeof store.byTabId === 'object' ? store.byTabId : {},
+      byPolicyId: store.byPolicyId && typeof store.byPolicyId === 'object' ? store.byPolicyId : {}
+    };
+  }
+
+  if (store && typeof store === 'object') {
+    return { byTabId: { ...store }, byPolicyId: {} };
+  }
+
+  return { byTabId: {}, byPolicyId: {} };
+};
+
+const extractPolicyIdFromReportUrl = (url) => {
+  const match = (url || '').match(/\/policyId\/([0-9a-f-]{36})(?:\/|$)/i);
+  return match ? match[1] : null;
+};
+
+const extractPolicyIdsFromRequest = (body, documentUrl = '') => {
+  const policyIds = new Set();
+  const collectMatches = (text) => {
+    if (!text) return;
+    const matches = text.match(/PolicyId(?:\s+eq\s+|["':\s]+)([0-9a-f-]{36})/ig) || [];
+    matches.forEach((raw) => {
+      const idMatch = raw.match(/([0-9a-f-]{36})/i);
+      if (idMatch) policyIds.add(idMatch[1]);
+    });
+  };
+
+  if (body && typeof body === 'object') {
+    collectMatches(JSON.stringify(body));
+    if (typeof body.filter === 'string') {
+      collectMatches(body.filter);
+    }
+  } else if (typeof body === 'string') {
+    collectMatches(body);
+  }
+
+  const policyIdFromUrl = extractPolicyIdFromReportUrl(documentUrl);
+  if (policyIdFromUrl) {
+    policyIds.add(policyIdFromUrl);
+  }
+
+  return [...policyIds];
+};
+
+const getReportRequestKind = (url = '') => {
+  if (url.includes(REPORT_STATUS_ENDPOINT)) return 'status';
+  if (url.includes(REPORT_SUMMARY_ENDPOINT)) return 'summary';
+  return 'other';
 };
 
 const decodeRequestBody = (requestBody) => {
@@ -71,15 +127,29 @@ const persistReportRequest = (details) => {
 
   if (typeof chrome !== 'undefined' && chrome.storage?.local) {
     chrome.storage.local.get([REPORT_REQUESTS_STORAGE_KEY], (data) => {
-      const existing = data[REPORT_REQUESTS_STORAGE_KEY] || {};
-      existing[String(details.tabId)] = {
+      const existing = normalizeReportRequestStore(data[REPORT_REQUESTS_STORAGE_KEY]);
+      const policyIds = extractPolicyIdsFromRequest(parsedBody, details.documentUrl || '');
+      const reportRequestEntry = {
         url: details.url,
         method: details.method,
         body: parsedBody,
         capturedAt: new Date(details.timeStamp || Date.now()).toISOString(),
         initiator: requestSource,
         documentUrl: details.documentUrl || null
-        };
+      };
+
+      if (details.tabId >= 0) {
+        existing.byTabId[String(details.tabId)] = reportRequestEntry;
+      }
+
+      const requestKind = getReportRequestKind(details.url);
+      policyIds.forEach((policyId) => {
+        existing.byPolicyId[policyId] = existing.byPolicyId[policyId] || { requests: {} };
+        existing.byPolicyId[policyId].lastRequest = reportRequestEntry;
+        existing.byPolicyId[policyId].capturedAt = reportRequestEntry.capturedAt;
+        existing.byPolicyId[policyId].requests[requestKind] = reportRequestEntry;
+      });
+
       chrome.storage.local.set({ [REPORT_REQUESTS_STORAGE_KEY]: existing });
     });
   }
@@ -135,8 +205,12 @@ if (typeof chrome !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     decodeRequestBody,
+    extractPolicyIdFromReportUrl,
+    extractPolicyIdsFromRequest,
+    getReportRequestKind,
     hasTrustedRequestSource,
     isTrustedIntuneRequestSource,
+    normalizeReportRequestStore,
     shouldCaptureReportRequest
   };
 }

@@ -5,6 +5,7 @@ const {
   isDeviceContextUrl,
   normalizeIntunePageContext,
   isKnownReportAddContextUrl,
+  extractPolicyIdFromReportUrl,
   isSupportedReportAddContext
 } = require('./js/reportContext.js');
 
@@ -24,6 +25,13 @@ test('normalizes Intune hash contexts for comparisons', () => {
   assert.equal(
     normalizeIntunePageContext('https://intune.microsoft.com/#view/Microsoft_Intune_DeviceSettings/DeviceStatusByCompliacePolicy.ReactView/policyId/abc?foo=bar'),
     'https://intune.microsoft.com/#view/Microsoft_Intune_DeviceSettings/DeviceStatusByCompliacePolicy.ReactView/policyId/abc'
+  );
+});
+
+test('extracts policy IDs from report URLs', () => {
+  assert.equal(
+    extractPolicyIdFromReportUrl('https://intune.microsoft.com/#view/Microsoft_Intune_DeviceSettings/DeviceStatusByCompliacePolicy.ReactView/policyId/3ee52e60-bbc8-4a83-aa32-a4e35ee2a62a/policyPlatformType~/6'),
+    '3ee52e60-bbc8-4a83-aa32-a4e35ee2a62a'
   );
 });
 

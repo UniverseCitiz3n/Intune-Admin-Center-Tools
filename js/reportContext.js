@@ -20,6 +20,11 @@
     return REPORT_ADD_URL_PATTERNS.some((pattern) => pattern.test(url));
   };
 
+  const extractPolicyIdFromReportUrl = (url) => {
+    const match = (url || '').match(/\/policyId\/([0-9a-f-]{36})(?:\/|$)/i);
+    return match ? match[1] : null;
+  };
+
   const isSupportedReportAddContext = (activeTabUrl, reportRequest) => {
     if (!reportRequest || isDeviceContextUrl(activeTabUrl)) {
       return false;
@@ -32,6 +37,7 @@
     isDeviceContextUrl,
     normalizeIntunePageContext,
     isKnownReportAddContextUrl,
+    extractPolicyIdFromReportUrl,
     isSupportedReportAddContext
   };
 
