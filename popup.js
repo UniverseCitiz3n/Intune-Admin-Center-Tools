@@ -5,6 +5,7 @@ document.addEventListener("DOMContentLoaded", () => {
     sortDirection: 'asc',
     sortField: 'deviceName', // Track which field to sort by
     theme: 'light',
+    activeTabUrl: '',
     targetMode: 'device', // New: track whether we're targeting devices or users
     selectedTableRows: new Set(), // Track selected table rows
     dynamicGroups: new Set(), // Track dynamic groups that cannot be modified manually
@@ -19,6 +20,16 @@ document.addEventListener("DOMContentLoaded", () => {
     },
     columnFilters: {} // Track active column filter selections: { columnKey: Set([val1, val2]) }
   };
+
+  const {
+    isDeviceContextUrl,
+    normalizeIntunePageContext,
+    isKnownReportAddContextUrl,
+    extractPolicyIdFromReportUrl,
+    getBestCapturedReportRequest,
+    buildStatusReportRequestFromCaptured,
+    isSupportedReportAddContext
+  } = window.reportContextHelpers || {};
 
   // ── Theme Management Functions ───────────────────────────────────────
   const toggleTheme = () => {
@@ -962,7 +973,425 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       });
     });  
-  };  // getAllGroupsMap: Get groups map (device & user) for lookups, with dynamic group tracking
+  };
+
+  const REPORT_REQUESTS_STORAGE_KEY = 'lastCapturedReportRequests';
+  const REPORT_REQUEST_MAX_AGE_MS = 30 * 60 * 1000;
+  const REPORT_PAGE_SIZE = 200;
+
+  const getActiveTab = async () => {
+    return new Promise((resolve, reject) => {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (!tabs || !tabs[0]) {
+          reject(new Error('No active tab found.'));
+          return;
+        }
+        state.activeTabUrl = tabs[0].url || '';
+        resolve(tabs[0]);
+      });
+    });
+  };
+
+  const getCapturedReportRequestForActiveTab = async () => {
+    const activeTab = await getActiveTab();
+    const tabId = activeTab.id;
+    const activeTabUrl = activeTab.url || '';
+
+    return new Promise((resolve) => {
+      chrome.storage.local.get([REPORT_REQUESTS_STORAGE_KEY], (data) => {
+        const storedRequests = data[REPORT_REQUESTS_STORAGE_KEY] || {};
+        resolve(
+          getBestCapturedReportRequest
+            ? getBestCapturedReportRequest(storedRequests, activeTabUrl, tabId, Date.now(), REPORT_REQUEST_MAX_AGE_MS)
+            : null
+        );
+      });
+    });
+  };
+
+  const buildDefaultStatusReportRequestFromUrl = (activeTabUrl) => {
+    const policyId = extractPolicyIdFromReportUrl ? extractPolicyIdFromReportUrl(activeTabUrl) : null;
+    if (!policyId) return null;
+
+    return {
+      url: 'https://graph.microsoft.com/beta/deviceManagement/reports/getDeviceStatusByCompliacePolicyReport',
+      method: 'POST',
+      body: {
+        select: [],
+        skip: 0,
+        top: 50,
+        filter: `(PolicyId eq '${policyId}')`,
+        orderBy: ['DeviceName asc'],
+        search: ''
+      },
+      capturedAt: new Date().toISOString(),
+      documentUrl: activeTabUrl,
+      synthesized: true
+    };
+  };
+
+  const cloneJSON = (value) => JSON.parse(JSON.stringify(value));
+  const escapeODataString = (value) => String(value).replace(/'/g, "''");
+  const encodeODataFilter = (expression) => encodeURIComponent(expression);
+
+  const runWithConcurrency = async (items, limit, worker) => {
+    const results = new Array(items.length);
+    let nextIndex = 0;
+
+    const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex++;
+        results[currentIndex] = await worker(items[currentIndex], currentIndex);
+      }
+    });
+
+    await Promise.all(runners);
+    return results;
+  };
+
+  const coercePagingValue = (sourceValue, nextValue) => (
+    typeof sourceValue === 'string' ? String(nextValue) : nextValue
+  );
+
+  const buildSchemaMap = (schema) => {
+    const schemaMap = {};
+    (schema || []).forEach((column, index) => {
+      if (column && column.Column) {
+        schemaMap[column.Column] = index;
+      }
+    });
+    return schemaMap;
+  };
+
+  const getReportCellValue = (row, schemaMap, columnNames) => {
+    for (const columnName of columnNames) {
+      const index = schemaMap[columnName];
+      if (index === undefined) continue;
+      const value = row[index];
+      if (value === undefined || value === null) continue;
+      if (typeof value === 'string' && !value.trim()) continue;
+      return value;
+    }
+    return null;
+  };
+
+  const isZeroGuid = (value) => (
+    typeof value === 'string' && value.toLowerCase() === '00000000-0000-0000-0000-000000000000'
+  );
+
+  const reportSupportsMode = (schemaMap, mode) => {
+    const deviceColumns = ['DeviceId', 'ManagedDeviceId', 'AadDeviceId', 'AzureAdDeviceId', 'DeviceName'];
+    const userColumns = ['UserId', 'UPN', 'UserPrincipalName', 'UserName'];
+    const requiredColumns = mode === 'device' ? deviceColumns : userColumns;
+    return requiredColumns.some((column) => schemaMap[column] !== undefined);
+  };
+
+  const fetchAllReportRows = async (reportRequest, token) => {
+    if (!reportRequest || !reportRequest.url || !reportRequest.body) {
+      return null;
+    }
+
+    const baseBody = cloneJSON(reportRequest.body);
+    const rows = [];
+    let schema = null;
+    let totalRowCount = 0;
+    let skip = 0;
+    const requestedTop = Number(baseBody.top);
+    const effectivePageSize = Number.isFinite(requestedTop) && requestedTop > 0 ? requestedTop : REPORT_PAGE_SIZE;
+
+    while (true) {
+      const requestBody = {
+        ...baseBody,
+        skip: coercePagingValue(baseBody.skip, skip),
+        top: coercePagingValue(baseBody.top, effectivePageSize)
+      };
+
+      const response = await fetchJSON(reportRequest.url, {
+        method: 'POST',
+        headers: { 'Authorization': token, 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response || !Array.isArray(response.Schema) || !Array.isArray(response.Values)) {
+        throw new Error('Current report could not be replayed.');
+      }
+
+      schema = schema || response.Schema;
+      totalRowCount = Number(response.TotalRowCount) || totalRowCount;
+      rows.push(...response.Values);
+
+      if (response.Values.length === 0) break;
+      if (response.Values.length < effectivePageSize) break;
+      if (totalRowCount && rows.length >= totalRowCount) break;
+
+      skip += response.Values.length;
+    }
+
+    return { schema, rows, totalRowCount: totalRowCount || rows.length };
+  };
+
+  const resolveDeviceDirectoryObjectsByAzureIds = async (azureDeviceIds, token) => {
+    const resolved = new Map();
+    const batchSize = 20;
+
+    for (let i = 0; i < azureDeviceIds.length; i += batchSize) {
+      const batch = azureDeviceIds.slice(i, i + batchSize);
+      const requests = batch.map((azureDeviceId, index) => {
+        const escapedDeviceId = azureDeviceId.replace(/'/g, "''");
+        const filter = encodeURIComponent(`deviceId eq '${escapedDeviceId}'`);
+        return {
+          id: String(index),
+          method: 'GET',
+          url: `/devices?$filter=${filter}&$select=id,displayName`
+        };
+      });
+
+      try {
+        const batchResponse = await fetchJSON('https://graph.microsoft.com/v1.0/$batch', {
+          method: 'POST',
+          headers: { 'Authorization': token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requests })
+        });
+
+        (batchResponse.responses || []).forEach((response) => {
+          const requestIndex = Number(response.id);
+          const azureDeviceId = batch[requestIndex];
+          const device = response.body?.value?.[0];
+          if (azureDeviceId && device && device.id) {
+            resolved.set(azureDeviceId, {
+              id: device.id,
+              displayName: device.displayName || azureDeviceId,
+              type: 'device'
+            });
+          }
+        });
+      } catch (error) {
+        logMessage(`resolveDeviceDirectoryObjectsByAzureIds: Batch lookup failed - ${error.message}`);
+      }
+    }
+
+    return resolved;
+  };
+
+  const resolveReportUsers = async (rows, schemaMap, token) => {
+    const resolved = [];
+    const unresolved = [];
+    const seen = new Set();
+    const pendingLookups = [];
+
+    for (const row of rows) {
+      const userId = getReportCellValue(row, schemaMap, ['UserId', 'userId']);
+      const upn = getReportCellValue(row, schemaMap, ['UPN', 'UserPrincipalName', 'userPrincipalName']);
+      const userName = getReportCellValue(row, schemaMap, ['UserName', 'userName', 'DisplayName', 'displayName']);
+
+      if (userId && !isZeroGuid(userId) && !seen.has(userId)) {
+        seen.add(userId);
+        resolved.push({ id: userId, displayName: userName || upn || userId, type: 'user' });
+        continue;
+      }
+
+      if (upn) {
+        pendingLookups.push({ upn: String(upn), userName });
+      } else {
+        unresolved.push(userName || upn || userId || 'Unknown user');
+      }
+    }
+
+    const lookupResults = await runWithConcurrency(pendingLookups, 8, async (item) => {
+      const user = await resolveItemToDirectoryId(item.upn, token);
+      return { item, user };
+    });
+
+    lookupResults.forEach(({ item, user }) => {
+      if (user && user.id && user.type === 'user' && !seen.has(user.id)) {
+        seen.add(user.id);
+        resolved.push({ id: user.id, displayName: user.displayName || item.upn, type: 'user' });
+        return;
+      }
+
+      unresolved.push(item.userName || item.upn || 'Unknown user');
+    });
+
+    return { resolved, unresolved };
+  };
+
+  const resolveReportDevices = async (rows, schemaMap, token) => {
+    const resolved = [];
+    const unresolved = [];
+    const seen = new Set();
+    const azureDeviceIds = [];
+    const seenAzureDeviceIds = new Set();
+    const pendingLookups = [];
+
+    rows.forEach((row) => {
+      const azureDeviceId = getReportCellValue(row, schemaMap, ['AadDeviceId', 'AzureAdDeviceId', 'azureADDeviceId']);
+      if (azureDeviceId && !isZeroGuid(azureDeviceId) && !seenAzureDeviceIds.has(azureDeviceId)) {
+        seenAzureDeviceIds.add(azureDeviceId);
+        azureDeviceIds.push(azureDeviceId);
+      }
+    });
+
+    const resolvedByAzureId = await resolveDeviceDirectoryObjectsByAzureIds(azureDeviceIds, token);
+
+    for (const row of rows) {
+      const managedDeviceId = getReportCellValue(row, schemaMap, ['DeviceId', 'ManagedDeviceId', 'managedDeviceId']);
+      const azureDeviceId = getReportCellValue(row, schemaMap, ['AadDeviceId', 'AzureAdDeviceId', 'azureADDeviceId']);
+      const deviceName = getReportCellValue(row, schemaMap, ['DeviceName', 'deviceName', 'DisplayName', 'displayName']);
+
+      if (azureDeviceId && resolvedByAzureId.has(azureDeviceId)) {
+        const device = resolvedByAzureId.get(azureDeviceId);
+        if (!seen.has(device.id)) {
+          seen.add(device.id);
+          resolved.push({
+            id: device.id,
+            displayName: deviceName || device.displayName || azureDeviceId,
+            type: 'device'
+          });
+        }
+        continue;
+      }
+
+      pendingLookups.push({
+        managedDeviceId: managedDeviceId ? String(managedDeviceId) : '',
+        deviceName: deviceName ? String(deviceName) : '',
+        azureDeviceId: azureDeviceId ? String(azureDeviceId) : ''
+      });
+    }
+
+    const lookupResults = await runWithConcurrency(pendingLookups, 6, async (item) => {
+      if (item.managedDeviceId && !isZeroGuid(item.managedDeviceId)) {
+        try {
+          const device = await getDirectoryObjectId(item.managedDeviceId, token, 'device');
+          if (device && device.directoryId) {
+            return {
+              item,
+              device: {
+                id: device.directoryId,
+                displayName: item.deviceName || device.displayName || item.managedDeviceId,
+                type: 'device'
+              }
+            };
+          }
+        } catch (error) {
+          logMessage(`resolveReportDevices: Failed managed device lookup for ${item.managedDeviceId} - ${error.message}`);
+        }
+      }
+
+      if (item.deviceName) {
+        const device = await resolveItemToDirectoryId(item.deviceName, token);
+        if (device && device.id && device.type === 'device') {
+          return {
+            item,
+            device: {
+              id: device.id,
+              displayName: device.displayName || item.deviceName,
+              type: 'device'
+            }
+          };
+        }
+      }
+
+      return { item, device: null };
+    });
+
+    lookupResults.forEach(({ item, device }) => {
+      if (device && !seen.has(device.id)) {
+        seen.add(device.id);
+        resolved.push(device);
+        return;
+      }
+
+      unresolved.push(item.deviceName || item.managedDeviceId || item.azureDeviceId || 'Unknown device');
+    });
+
+    return { resolved, unresolved };
+  };
+
+  const getDirectoryObjectsFromCurrentReport = async (token, mode, reportRequest = null) => {
+    reportRequest = reportRequest || await getCapturedReportRequestForActiveTab();
+    if (!reportRequest) {
+      return { status: 'missing' };
+    }
+
+    const reportData = await fetchAllReportRows(reportRequest, token);
+    if (!reportData || !reportData.schema) {
+      return { status: 'missing' };
+    }
+
+    const schemaMap = buildSchemaMap(reportData.schema);
+    if (!reportSupportsMode(schemaMap, mode)) {
+      return {
+        status: 'incompatible',
+        reportRequest,
+        totalRows: reportData.totalRowCount,
+        availableColumns: Object.keys(schemaMap)
+      };
+    }
+
+    const resolver = mode === 'device' ? resolveReportDevices : resolveReportUsers;
+    const results = await resolver(reportData.rows, schemaMap, token);
+
+    return {
+      status: 'ready',
+      reportRequest,
+      totalRows: reportData.totalRowCount,
+      resolved: results.resolved,
+      unresolved: results.unresolved
+    };
+  };
+
+  const resolveSelectedGroupsForModification = async (allSelected, token) => {
+    const groups = [];
+    const seenGroupIds = new Set();
+    const unresolved = [];
+
+    allSelected.searchResults.forEach((group) => {
+      if (!seenGroupIds.has(group.id)) {
+        seenGroupIds.add(group.id);
+        groups.push(group);
+      }
+    });
+
+    const resolvedGroups = await Promise.all(allSelected.tableSelections.map(async (groupName) => {
+      try {
+        const filter = encodeODataFilter(`displayName eq '${escapeODataString(groupName)}'`);
+        const groupData = await fetchJSON(`https://graph.microsoft.com/v1.0/groups?$filter=${filter}&$select=id,displayName`, {
+          method: "GET",
+          headers: { "Authorization": token, "Content-Type": "application/json" }
+        });
+
+        if (groupData.value && groupData.value.length > 0) {
+          return {
+            groupName,
+            id: groupData.value[0].id,
+            name: groupData.value[0].displayName || groupName
+          };
+        }
+        return { groupName, reason: 'Group not found' };
+      } catch (error) {
+        return { groupName, reason: error.message };
+      }
+    }));
+
+    resolvedGroups.forEach((group) => {
+      if (!group.id) {
+        unresolved.push({ groupName: group.groupName, reason: group.reason });
+        return;
+      }
+
+      if (!seenGroupIds.has(group.id)) {
+        seenGroupIds.add(group.id);
+        groups.push({
+          id: group.id,
+          name: group.name
+        });
+      }
+    });
+
+    return { groups, unresolved };
+  };
+
+  // getAllGroupsMap: Get groups map (device & user) for lookups, with dynamic group tracking
   const getAllGroupsMap = async (deviceObjectId, userObjectId, token) => {
     const headers = {
       "Authorization": token,
@@ -1216,7 +1645,8 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error("No user associated with this device.");
       }
 
-      const userData = await fetchJSON(`https://graph.microsoft.com/beta/users?$filter=userPrincipalName eq '${encodeURIComponent(userPrincipalName)}'`, {
+      const filter = encodeODataFilter(`userPrincipalName eq '${escapeODataString(userPrincipalName)}'`);
+      const userData = await fetchJSON(`https://graph.microsoft.com/beta/users?$filter=${filter}`, {
         method: "GET",
         headers: { "Authorization": token, "Content-Type": "application/json" }
       });
@@ -1282,8 +1712,17 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.title = tooltipText;
       } else {
         btn.classList.remove('disabled');
-        // Remove tooltip when buttons are enabled
-        btn.removeAttribute('title');
+        if (id === 'addToGroups') {
+          const addButtonPresentation = getAddButtonPresentation();
+          if (addButtonPresentation.title) {
+            btn.title = addButtonPresentation.title;
+          } else {
+            btn.removeAttribute('title');
+          }
+        } else {
+          // Remove tooltip when buttons are enabled
+          btn.removeAttribute('title');
+        }
       }
     });
 
@@ -1377,12 +1816,51 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
+  const getAddButtonPresentation = () => {
+    if (isKnownReportAddContextUrl && isKnownReportAddContextUrl(state.activeTabUrl)) {
+      const targetType = state.targetMode === 'device' ? 'devices' : 'users';
+      return {
+        text: 'Add Visible',
+        title: `Add visible ${targetType} from the current Intune report to selected groups.`
+      };
+    }
+
+    return {
+      text: 'Add',
+      title: ''
+    };
+  };
+
   // updateButtonText: Update button text based on current target mode
   const updateButtonText = () => {
     const targetType = state.targetMode === 'device' ? 'Device' : 'User';
-    document.getElementById('addBtnText').textContent = `Add`;
+    const addButton = document.getElementById('addToGroups');
+    const addButtonText = document.getElementById('addBtnText');
+    const removeButton = document.getElementById('removeFromGroups');
+    const addButtonPresentation = getAddButtonPresentation();
+
+    addButtonText.textContent = addButtonPresentation.text;
+    if (addButtonPresentation.title) {
+      addButton.title = addButtonPresentation.title;
+    } else {
+      addButton.removeAttribute('title');
+    }
+
     document.getElementById('removeBtnText').textContent = `Remove`;
+    if (removeButton && !removeButton.classList.contains('disabled')) {
+      removeButton.removeAttribute('title');
+    }
     logMessage(`updateButtonText: Updated buttons for ${targetType} mode`);
+  };
+
+  const refreshActionButtonContext = async () => {
+    try {
+      await getActiveTab();
+    } catch (error) {
+      state.activeTabUrl = '';
+    }
+    updateButtonText();
+    updateActionButtonsState();
   };
 
   // handleTargetModeToggle: Handle switching between device and user modes
@@ -1391,6 +1869,7 @@ document.addEventListener("DOMContentLoaded", () => {
     
     if (state.targetMode === mode) {
       logMessage(`handleTargetModeToggle: No change needed - already in ${mode} mode`);
+      updateButtonText();
       return; // No change needed
     }
 
@@ -1963,6 +2442,83 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
+  const addCurrentReportObjectsToGroups = async (allSelected, token) => {
+    const targetType = state.targetMode === 'device' ? 'device' : 'user';
+    const activeTab = await getActiveTab();
+    let reportRequest = await getCapturedReportRequestForActiveTab();
+    const activeTabUrl = activeTab.url || '';
+    const isKnownReportContext = isKnownReportAddContextUrl && isKnownReportAddContextUrl(activeTabUrl);
+    const defaultStatusRequest = buildDefaultStatusReportRequestFromUrl(activeTabUrl);
+
+    if (reportRequest) {
+      reportRequest = buildStatusReportRequestFromCaptured(reportRequest, activeTabUrl);
+    }
+
+    if (isKnownReportContext && !reportRequest) {
+      reportRequest = defaultStatusRequest;
+    }
+
+    if (!isSupportedReportAddContext(activeTabUrl, reportRequest)) {
+      if (isKnownReportContext && !reportRequest) {
+        throw new Error('Could not determine the current report query. Refresh the report list or interact with filters/search, then try Add Visible again.');
+      }
+      return false;
+    }
+
+    const reportObjects = await getDirectoryObjectsFromCurrentReport(token, state.targetMode, reportRequest);
+
+    if (!reportObjects || reportObjects.status === 'missing') {
+      return false;
+    }
+
+    if (reportObjects.status === 'incompatible') {
+      throw new Error(`The current report does not expose ${targetType} columns for Add in ${targetType} mode.`);
+    }
+
+    if (reportObjects.resolved.length === 0) {
+      throw new Error(`No ${targetType}s from the current report could be resolved.`);
+    }
+
+    const groupTargets = await resolveSelectedGroupsForModification(allSelected, token);
+    if (groupTargets.groups.length === 0) {
+      throw new Error('Could not resolve any selected groups.');
+    }
+
+    showProcessingNotification(
+      `Adding ${reportObjects.resolved.length} ${targetType}${reportObjects.resolved.length !== 1 ? 's' : ''} from report to ${groupTargets.groups.length} group(s)...`
+    );
+
+    const groupResults = [];
+    for (const group of groupTargets.groups) {
+      const result = await addDirectoryObjectsToGroup(group.id, reportObjects.resolved, token);
+      groupResults.push({ group, result });
+    }
+
+    const failures = [];
+    let totalAdded = 0;
+    let totalFailed = 0;
+
+    groupResults.forEach(({ group, result }) => {
+      totalAdded += result.added;
+      totalFailed += result.failed;
+
+      if (result.failed > 0) {
+        failures.push(`${group.name}: ${result.failed} failed`);
+      }
+    });
+
+    reportObjects.unresolved.forEach((item) => failures.push(`Source ${targetType}: ${item} could not be resolved`));
+    groupTargets.unresolved.forEach((group) => failures.push(`Group ${group.groupName}: ${group.reason}`));
+
+    const processedCount = reportObjects.resolved.length;
+    const success = failures.length === 0 && totalFailed === 0;
+    const successMsg = `Added ${processedCount} ${targetType}${processedCount !== 1 ? 's' : ''} from the current report to ${groupTargets.groups.length} group(s).`;
+    const errorMsg = `Processed ${processedCount} ${targetType}${processedCount !== 1 ? 's' : ''} from the current report.\nAdded: ${totalAdded}\nFailed: ${totalFailed + reportObjects.unresolved.length}\n${failures.join('\n')}`;
+
+    showResultNotification(success ? successMsg : errorMsg, success ? 'success' : 'error');
+    return true;
+  };
+
   // Handle Adding Device/User to Selected Groups
   const handleAddToGroups = async () => {
     const targetType = state.targetMode === 'device' ? 'device' : 'user';
@@ -1985,8 +2541,13 @@ document.addEventListener("DOMContentLoaded", () => {
     showProcessingNotification(`Adding ${targetType} to ${totalCount} group(s)...`);
 
     try {
-      const { mdmDeviceId } = await verifyMdmUrl();
       const token = await getToken();
+      const usedReportSource = await addCurrentReportObjectsToGroups(allSelected, token);
+      if (usedReportSource) {
+        return;
+      }
+
+      const { mdmDeviceId } = await verifyMdmUrl();
       logMessage(`addToGroups: Extracted mdmDeviceId ${mdmDeviceId}`);
 
       const { directoryId, displayName } = await getDirectoryObjectId(mdmDeviceId, token, state.targetMode);
@@ -2000,23 +2561,13 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       // Process table selection groups (need to resolve names to IDs)
-      for (const groupName of allSelected.tableSelections) {
-        try {
-          const groupData = await fetchJSON(`https://graph.microsoft.com/v1.0/groups?$filter=displayName eq '${encodeURIComponent(groupName)}'&$select=id,displayName`, {
-            method: "GET",
-            headers: { "Authorization": token, "Content-Type": "application/json" }
-          });
-
-          if (groupData.value && groupData.value.length > 0) {
-            const groupId = groupData.value[0].id;
-            promises.push(addToSingleGroup(groupId, directoryId, token, groupName));
-          } else {
-            promises.push(Promise.resolve({ groupName, error: "Group not found" }));
-          }
-        } catch (e) {
-          promises.push(Promise.resolve({ groupName, error: e.message }));
-        }
+      const groupTargets = await resolveSelectedGroupsForModification(allSelected, token);
+      for (const group of groupTargets.groups.slice(allSelected.searchResults.length)) {
+        promises.push(addToSingleGroup(group.id, directoryId, token, group.name));
       }
+      groupTargets.unresolved.forEach((group) => {
+        promises.push(Promise.resolve({ groupName: group.groupName, error: group.reason }));
+      });
 
       const results = await Promise.all(promises);
       let success = true;
@@ -2097,7 +2648,8 @@ document.addEventListener("DOMContentLoaded", () => {
       // Process table selection groups (need to resolve names to IDs)
       for (const groupName of allSelected.tableSelections) {
         try {
-          const groupData = await fetchJSON(`https://graph.microsoft.com/v1.0/groups?$filter=displayName eq '${encodeURIComponent(groupName)}'&$select=id,displayName`, {
+          const filter = encodeODataFilter(`displayName eq '${escapeODataString(groupName)}'`);
+          const groupData = await fetchJSON(`https://graph.microsoft.com/v1.0/groups?$filter=${filter}&$select=id,displayName`, {
             method: "GET",
             headers: { "Authorization": token, "Content-Type": "application/json" }
           });
@@ -3242,7 +3794,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // Check if item looks like a UPN (contains @)
     if (item.includes('@')) {
       try {
-        const userData = await fetchJSON(`https://graph.microsoft.com/v1.0/users?$filter=userPrincipalName eq '${encodeURIComponent(escapedItem)}'&$select=id,displayName,userPrincipalName`, {
+        const filter = encodeODataFilter(`userPrincipalName eq '${escapedItem}'`);
+        const userData = await fetchJSON(`https://graph.microsoft.com/v1.0/users?$filter=${filter}&$select=id,displayName,userPrincipalName`, {
           method: "GET", headers
         });
         if (userData.value && userData.value.length > 0) {
@@ -3255,7 +3808,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Try as device displayName
     try {
-      const deviceData = await fetchJSON(`https://graph.microsoft.com/v1.0/devices?$filter=displayName eq '${encodeURIComponent(escapedItem)}'&$select=id,displayName`, {
+      const filter = encodeODataFilter(`displayName eq '${escapedItem}'`);
+      const deviceData = await fetchJSON(`https://graph.microsoft.com/v1.0/devices?$filter=${filter}&$select=id,displayName`, {
         method: "GET", headers
       });
       if (deviceData.value && deviceData.value.length > 0) {
@@ -3267,7 +3821,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Try as user displayName
     try {
-      const userData = await fetchJSON(`https://graph.microsoft.com/v1.0/users?$filter=displayName eq '${encodeURIComponent(escapedItem)}'&$select=id,displayName,userPrincipalName`, {
+      const filter = encodeODataFilter(`displayName eq '${escapedItem}'`);
+      const userData = await fetchJSON(`https://graph.microsoft.com/v1.0/users?$filter=${filter}&$select=id,displayName,userPrincipalName`, {
         method: "GET", headers
       });
       if (userData.value && userData.value.length > 0) {
@@ -3280,8 +3835,8 @@ document.addEventListener("DOMContentLoaded", () => {
     return null;
   };
 
-  // Add members to group using Graph API batch requests
-  const addMembersToGroup = async (groupId, memberIds, token) => {
+  // Add directory objects to a group using Graph API batch requests
+  const addDirectoryObjectsToGroup = async (groupId, memberIds, token, onProgress = null) => {
     const results = {
       total: memberIds.length,
       added: 0,
@@ -3295,9 +3850,9 @@ document.addEventListener("DOMContentLoaded", () => {
       const batch = memberIds.slice(i, i + batchSize);
 
       const progress = Math.min(100, Math.round(((i + batch.length) / memberIds.length) * 100));
-      document.getElementById('bulkAddProgressBar').style.width = `${progress}%`;
-      document.getElementById('bulkAddProgressDetails').textContent =
-        `Processing ${Math.min(i + batch.length, memberIds.length)} of ${memberIds.length}...`;
+      if (onProgress) {
+        onProgress(progress, `Processing ${Math.min(i + batch.length, memberIds.length)} of ${memberIds.length}...`);
+      }
 
       try {
         const idMapping = {};
@@ -3362,8 +3917,18 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    document.getElementById('bulkAddProgressBar').style.width = '100%';
+    if (onProgress) {
+      onProgress(100, `Processing ${memberIds.length} of ${memberIds.length}...`);
+    }
     return results;
+  };
+
+  // Add members to group using Graph API batch requests
+  const addMembersToGroup = async (groupId, memberIds, token) => {
+    return addDirectoryObjectsToGroup(groupId, memberIds, token, (progress, details) => {
+      document.getElementById('bulkAddProgressBar').style.width = `${progress}%`;
+      document.getElementById('bulkAddProgressDetails').textContent = details;
+    });
   };
 
   // Show bulk add results
@@ -4026,7 +4591,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const deviceObjectId = deviceObjData.value[0].id;
       let userPromise;
       if (userPrincipalName && userPrincipalName !== 'Unknown user') {
-        userPromise = fetchJSON(`https://graph.microsoft.com/beta/users?$filter=userPrincipalName eq '${encodeURIComponent(userPrincipalName)}'`, {
+        const filter = encodeODataFilter(`userPrincipalName eq '${escapeODataString(userPrincipalName)}'`);
+        userPromise = fetchJSON(`https://graph.microsoft.com/beta/users?$filter=${filter}`, {
           method: "GET",
           headers: { "Authorization": token, "Content-Type": "application/json" }
         }).then(userData => (userData.value && userData.value.length > 0) ? userData.value[0].id : null);
@@ -4192,7 +4758,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const deviceObjectId = deviceObjData.value[0].id;
       let userPromise;
       if (userPrincipalName && userPrincipalName !== 'Unknown user') {
-        userPromise = fetchJSON(`https://graph.microsoft.com/beta/users?$filter=userPrincipalName eq '${encodeURIComponent(userPrincipalName)}'`, {
+        const filter = encodeODataFilter(`userPrincipalName eq '${escapeODataString(userPrincipalName)}'`);
+        userPromise = fetchJSON(`https://graph.microsoft.com/beta/users?$filter=${filter}`, {
           method: "GET",
           headers: { "Authorization": token, "Content-Type": "application/json" }
         }).then(userData => (userData.value && userData.value.length > 0) ? userData.value[0].id : null);
@@ -4633,7 +5200,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const deviceObjectId = deviceObjData.value[0].id;
       let userObjectId = null;
       if (userPrincipalName && userPrincipalName !== 'Unknown user') {
-        const userData = await fetchJSON(`https://graph.microsoft.com/beta/users?$filter=userPrincipalName eq '${encodeURIComponent(userPrincipalName)}'`, {
+        const filter = encodeODataFilter(`userPrincipalName eq '${escapeODataString(userPrincipalName)}'`);
+        const userData = await fetchJSON(`https://graph.microsoft.com/beta/users?$filter=${filter}`, {
           method: "GET",
           headers: { "Authorization": token, "Content-Type": "application/json" }
         });
@@ -4820,7 +5388,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const deviceObjectId = deviceObjData.value[0].id;
       let userObjectId = null;
       if (userPrincipalName && userPrincipalName !== 'Unknown user') {
-        const userData = await fetchJSON(`https://graph.microsoft.com/beta/users?$filter=userPrincipalName eq '${encodeURIComponent(userPrincipalName)}'`, {
+        const filter = encodeODataFilter(`userPrincipalName eq '${escapeODataString(userPrincipalName)}'`);
+        const userData = await fetchJSON(`https://graph.microsoft.com/beta/users?$filter=${filter}`, {
           method: "GET",
           headers: { "Authorization": token, "Content-Type": "application/json" }
         });
@@ -6337,7 +6906,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (hasValidPrimaryUser) {
         // Get the user ID for devices with a primary user
-        const userData = await fetchJSON(`https://graph.microsoft.com/beta/users?$filter=userPrincipalName eq '${encodeURIComponent(userPrincipalName)}'`, {
+        const filter = encodeODataFilter(`userPrincipalName eq '${escapeODataString(userPrincipalName)}'`);
+        const userData = await fetchJSON(`https://graph.microsoft.com/beta/users?$filter=${filter}`, {
           method: "GET",
           headers: { "Authorization": token, "Content-Type": "application/json" }
         });
@@ -6767,8 +7337,7 @@ document.addEventListener("DOMContentLoaded", () => {
           applyTheme(currentTheme);
           document.getElementById('deviceModeBtn').classList.add('active');
           document.getElementById('userModeBtn').classList.remove('active');
-          document.getElementById('addBtnText').textContent = 'Add';
-          document.getElementById('removeBtnText').textContent = 'Remove';
+          updateButtonText();
 
           // Clear all table content
           document.getElementById('configTableBody').innerHTML = '';
@@ -6864,6 +7433,7 @@ document.addEventListener("DOMContentLoaded", () => {
   restoreState();
   restoreFilterValue();
   initializeTheme();
+  refreshActionButtonContext();
   
   // Set version number in settings dropdown
   const versionElement = document.getElementById('extensionVersion');

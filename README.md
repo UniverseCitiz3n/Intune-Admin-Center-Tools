@@ -50,7 +50,7 @@ This extension includes **optional, privacy-focused Google Analytics** to unders
 
 #### Search & Assign
 - **Search Groups**: Find Azure AD groups by name with real-time filtering
-- **Add to Groups**: Assign device or user to multiple groups simultaneously
+- **Add to Groups**: Assign a device, user, or the full currently filtered Intune report list to multiple groups simultaneously
 - **Remove from Groups**: Bulk remove device or user from selected groups
 - **Dynamic Group Detection**: Automatically identifies and prevents modifications to dynamic groups
 
