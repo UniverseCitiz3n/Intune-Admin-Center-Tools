@@ -55,11 +55,13 @@ const extractPolicyIdsFromRequest = (body, documentUrl = '') => {
   const policyIds = new Set();
   const collectMatches = (text) => {
     if (!text) return;
-    const matches = text.match(/PolicyId(?:\s+eq\s+|["':\s]+)([0-9a-f-]{36})/ig) || [];
-    matches.forEach((raw) => {
-      const idMatch = raw.match(/([0-9a-f-]{36})/i);
-      if (idMatch) policyIds.add(idMatch[1]);
-    });
+    const pattern = /PolicyId[\s\S]{0,80}?([0-9a-f-]{36})/ig;
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      if (match[1]) {
+        policyIds.add(match[1]);
+      }
+    }
   };
 
   if (body && typeof body === 'object') {
