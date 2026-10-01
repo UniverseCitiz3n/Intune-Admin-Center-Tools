@@ -3,14 +3,33 @@ const assert = require('node:assert/strict');
 
 const {
   decodeRequestBody,
+  hasTrustedRequestSource,
   isTrustedIntuneRequestSource,
   shouldCaptureReportRequest
 } = require('./background.js');
 
 test('accepts only the Intune origin for report capture', () => {
   assert.equal(isTrustedIntuneRequestSource('https://intune.microsoft.com/#view/foo'), true);
+  assert.equal(isTrustedIntuneRequestSource('https://sandbox-2.reactblade.portal.azure.net/#view/foo'), true);
+  assert.equal(isTrustedIntuneRequestSource('https://main.portal.azure.net/#view/foo'), true);
   assert.equal(isTrustedIntuneRequestSource('https://intune.microsoft.com.evil.example/#view/foo'), false);
   assert.equal(isTrustedIntuneRequestSource('not-a-url'), false);
+});
+
+test('accepts any trusted source field on report requests', () => {
+  assert.equal(hasTrustedRequestSource({
+    initiator: 'https://sandbox-2.reactblade.portal.azure.net'
+  }), true);
+  assert.equal(hasTrustedRequestSource({
+    originUrl: 'https://main.portal.azure.net'
+  }), true);
+  assert.equal(hasTrustedRequestSource({
+    documentUrl: 'https://intune.microsoft.com/#view/foo'
+  }), true);
+  assert.equal(hasTrustedRequestSource({
+    initiator: 'https://example.com',
+    documentUrl: 'https://evil.example'
+  }), false);
 });
 
 test('identifies capture-worthy Intune report requests', () => {
@@ -18,7 +37,7 @@ test('identifies capture-worthy Intune report requests', () => {
     tabId: 5,
     method: 'POST',
     url: 'https://graph.microsoft.com/beta/deviceManagement/reports/getDeviceStatusByCompliacePolicyReport',
-    initiator: 'https://intune.microsoft.com'
+    initiator: 'https://sandbox-2.reactblade.portal.azure.net'
   }), true);
 
   assert.equal(shouldCaptureReportRequest({

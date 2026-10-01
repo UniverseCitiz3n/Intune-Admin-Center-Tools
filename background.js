@@ -2,16 +2,31 @@ let msGraphToken = null;
 const REPORT_REQUESTS_STORAGE_KEY = 'lastCapturedReportRequests';
 const isTrustedIntuneRequestSource = (value) => {
   try {
-    return new URL(value).origin === 'https://intune.microsoft.com';
+    const { hostname, origin, protocol } = new URL(value);
+    if (protocol !== 'https:') return false;
+
+    if (origin === 'https://intune.microsoft.com') {
+      return true;
+    }
+
+    return hostname.endsWith('.reactblade.portal.azure.net') || hostname.endsWith('.portal.azure.net');
   } catch (error) {
     return false;
   }
 };
+const hasTrustedRequestSource = (details) => {
+  const requestSources = [
+    details?.initiator,
+    details?.originUrl,
+    details?.documentUrl
+  ].filter(Boolean);
+
+  return requestSources.some(isTrustedIntuneRequestSource);
+};
 const shouldCaptureReportRequest = (details) => {
   if (!details || details.tabId < 0 || details.method !== 'POST') return false;
   if (!details.url || !details.url.includes('/deviceManagement/reports/')) return false;
-  const requestSource = details.initiator || details.originUrl || details.documentUrl || '';
-  return isTrustedIntuneRequestSource(requestSource);
+  return hasTrustedRequestSource(details);
 };
 
 const decodeRequestBody = (requestBody) => {
@@ -120,6 +135,7 @@ if (typeof chrome !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     decodeRequestBody,
+    hasTrustedRequestSource,
     isTrustedIntuneRequestSource,
     shouldCaptureReportRequest
   };
